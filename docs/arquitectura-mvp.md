@@ -1,7 +1,7 @@
 # AsturPower Training — Arquitectura inicial y plan MVP
 
-**Versión:** 0.1 — 2 de noviembre de 2026  
-**Estado:** propuesta de diseño técnico; **no significa que exista un servidor, una base de datos ni una integración Garmin funcionando**.
+**Versión:** 0.2 — 2 de noviembre de 2026  
+**Estado:** arquitectura del MVP en ejecución. La base inicial de Supabase está creada y probada. El acceso y primer panel están preparados en `desarrollo`, sin desplegar ni probar con cuentas reales. La integración Garmin no está activada. Véanse `docs/paso1-usuarios-permisos.md` y `docs/paso2-acceso-panel.md`.
 
 ## 1. Objetivo
 
@@ -49,7 +49,7 @@ Fuera de alcance inicial: pagos, entrenamientos generados automáticamente por I
 
 ## 4. Modelo preliminar de datos
 
-> Es un borrador lógico. **No se han creado tablas en ninguna base de datos.**
+> Modelo evolutivo: `profiles`, `user_roles` y `coach_athletes` ya están aplicadas y probadas. Las tablas deportivas y Garmin siguientes siguen siendo propuestas.
 
 | Entidad | Datos mínimos | Regla esencial |
 |---|---|---|
@@ -108,7 +108,7 @@ Las APIs Garmin **no han sido probadas** con una aplicación de AsturPower todav
 |---|---|---|
 | H0 | Web informativa y política inicial publicadas | Realizado |
 | H1 | Arquitectura inicial y datos documentados | Diseño |
-| H2 | Entorno de pruebas, autenticación, tablas con RLS y pruebas de aislamiento | Pendiente |
+| H2 | Entorno de pruebas, autenticación, tablas con RLS y pruebas de aislamiento | Base aplicada y 36 pruebas SQL superadas; acceso/panel preparado, pendiente de despliegue y prueba con cuenta real |
 | H3 | Entrenador invita a deportista y asigna entrenamiento sencillo; calendario visible | Pendiente |
 | H4 | Endpoints HTTPS y OAuth implementados y probados sin secretos expuestos | Pendiente |
 | H5 | Alta Garmin Starter registrada con Activity y Training, credenciales seguras | Pendiente |
@@ -116,7 +116,7 @@ Las APIs Garmin **no han sido probadas** con una aplicación de AsturPower todav
 
 ## 9. Próxima acción concreta
 
-**Antes de crear servicios o registrar Garmin:** revisar este diseño y crear un entorno **de pruebas** separado de producción, en región apropiada, con datos ficticios. Implementar primero autenticación y permisos entre entrenador/deportista (H2). Después pasar a las rutas y al alta de Garmin.
+**Próxima acción:** preparar un despliegue de pruebas separado, revisar Auth y autorizar la primera cuenta. La organización Supabase independiente ya está en Free y las tres tablas iniciales están probadas. El panel de `desarrollo` permite acceso, perfil propio y consulta de vínculos existentes; invitaciones y administración autorizada siguen pendientes. Después se abordarán planificación, rutas y alta Garmin.
 
 No introducir datos de salud reales ni secretos en el repositorio público. No sustituir la página pública existente hasta contar con pruebas y copia de seguridad.
 

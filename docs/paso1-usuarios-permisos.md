@@ -1,46 +1,31 @@
-# Paso 1 — Identidades y permisos (preparación)
+# Paso 1 — Identidades y permisos
 
-**Estado a 2 de noviembre de 2026:** el esquema SQL es un borrador guardado en la rama `desarrollo`. **No se ha creado ningún proyecto Supabase ni ejecutado SQL.** La web pública en `main` permanece intacta.
+**Estado comprobado a 2 de noviembre de 2026:** completado en la base independiente de AsturPower Training. Plan Free; proyecto existente con su nombre automático. `main` y la web pública permanecen intactos.
 
-## Por qué empezamos por aquí
+## Esquema aplicado
 
-La primera versión necesita tres tipos de usuarios: administrador, entrenador y deportista. Ningún usuario debe acceder a otro deportista salvo que exista una vinculación válida con el entrenador.
+- `profiles`: identificador vinculado a Auth, nombre visible y fecha de creación.
+- `user_roles`: un rol por usuario en este MVP: `admin`, `coach` o `athlete`. Solo un proceso privilegiado autorizado puede concederlos.
+- `coach_athletes`: vinculación pendiente, activa o revocada, con claves foráneas que validan que sus participantes sean entrenador y deportista.
 
-## Tablas preparadas
+Las tres tablas tienen RLS; cinco políticas restringen accesos. El cliente solo crea su perfil y modifica su nombre, consulta su rol y consulta las relaciones en las que participa. Un entrenador solo lee el perfil de deportistas con vinculación activa. No hay privilegios de lectura o escritura para visitantes sin autenticar.
 
-1. `profiles` — perfil mínimo (nombre visible e identificador de inicio de sesión). No duplicamos el correo guardado por Auth.
-2. `user_roles` — rol asignado exclusivamente desde el servidor; no desde datos editables por el usuario.
-3. `coach_athletes` — relación entrenador–deportista, pendiente, activa o revocada.
+Los roles no se obtienen de metadatos editables. El cliente no puede escribir roles ni crear, activar o revocar relaciones. Un rol `admin` no concede por sí mismo lectura global desde el cliente; la administración requiere servidor autorizado.
 
-Hay reglas RLS para que cada persona solo vea los registros autorizados. Las relaciones y los roles no pueden crearse ni modificarse desde un cliente corriente.
+## Archivos
 
-**Nota:** el diseño todavía no implementa las invitaciones, la autorización de administradores ni el alta segura de entrenadores. Eso se implementará y probará antes de introducir personas reales.
+- `database/esquema-inicial-borrador.sql`: borrador histórico original, no volver a aplicar sobre la base.
+- `database/esquema-inicial-aplicado.sql`: snapshot del SQL aplicado para base vacía; no es idempotente.
+- `database/tests/permisos-iniciales.sql`: pruebas transaccionales con identidades ficticias sin credenciales ni sesiones, descartadas al terminar.
 
-## Archivo preparado
+## Verificación realizada
 
-`database/esquema-inicial-borrador.sql` es el diseño de las tablas. Es **un borrador no aplicado** y no hay garantía de seguridad o funcionamiento hasta ejecutarlo en un entorno aislado y superar pruebas de acceso.
+36 comprobaciones superadas: acceso anónimo denegado, edición del perfil propio, aislamiento de usuarios y entrenadores, vínculos pendientes/revocados, escalada de rol rechazada, validación de roles en relaciones y borrado en cascada dentro de la transacción de prueba. Se confirmaron recuentos finales de cero usuarios Auth y cero filas en las tres tablas. El asesor de seguridad no devolvió avisos.
 
-## Pruebas obligatorias cuando tengamos una base de pruebas
+## Lo que sigue pendiente
 
-- Crear usuarios ficticios con Auth: entrenador A, entrenador B, deportista X y deportista Y.
-- Confirmar que un usuario no puede escribir `user_roles`, cambiar su propio rol ni insertar `coach_athletes`.
-- Comprobar que el deportista X ve su perfil, pero no puede consultar perfiles de Y.
-- Crear una relación A→X autorizada desde el servidor y activar la relación: A puede consultar el perfil de X; B no puede.
-- Revocar A→X: A deja de ver el perfil de X.
-- Comprobar que usuarios anónimos no pueden leer ni editar perfiles, roles ni relaciones.
-- Ejecutar las recomendaciones de seguridad de Supabase y revisar permisos de las tablas.
-- Hacer pruebas de restauración y de exportación/borrado antes de utilizar datos personales reales.
+No se han creado cuentas reales ni invitaciones, asignado un primer administrador o desplegado el servidor de gestión de roles y relaciones. Tampoco se ha configurado una conexión Garmin.
 
-## Separación de entornos
+La siguiente fase de acceso y panel está documentada en `docs/paso2-acceso-panel.md`. La verificación real de inicio de sesión, renovación y configuración Auth deberá completarse cuando se autorice la primera cuenta y el entorno de pruebas. La política de privacidad deberá actualizarse antes de tratar perfiles reales.
 
-**Producción:** `main` está conectada a Netlify. No se cambia durante esta fase.
-
-**Desarrollo:** rama `desarrollo` para código y esquemas preliminares. Evitamos que el código aún sin revisar se publique en el mismo directorio que la web pública.
-
-**Base de datos:** crear un proyecto Supabase exclusivo de AsturPower, sin usar bases de Comunio ni Gestión de Vehículos. La creación está pendiente de elegir cuenta/organización y de comprobar el precio antes de aceptarlo.
-
-## Próximo paso
-
-Elegir la organización de Supabase; consultar el coste exacto de un nuevo proyecto en ella; crear el entorno independiente solo si es gratuito (o después de autorización expresa del usuario sobre cualquier coste). A continuación aplicar un esquema revisado como migración versionada y ejecutar pruebas RLS.
-
-No se han añadido claves, credenciales, datos de Garmin o información de deportistas. Nunca guardar secretos en GitHub.
+No se ha cambiado el plan gratuito ni accedido a bases de otros proyectos. No hay claves, contraseñas, tokens o datos de deportistas en el repositorio.

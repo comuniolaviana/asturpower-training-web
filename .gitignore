@@ -1,0 +1,7 @@
+node_modules/
+dist-app/
+.env
+.env.*
+!.env.example
+.netlify/
+coverage/

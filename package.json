@@ -1,0 +1,14 @@
+{
+  "name": "asturpower-training",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config app/vite.config.js --host 0.0.0.0",
+    "build": "vite build --config app/vite.config.js",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": { "@supabase/supabase-js": "2.118.0" },
+  "devDependencies": { "vite": "8.3.5", "jsdom": "26.1.0" },
+  "engines": { "node": ">=22.12.0" }
+}
