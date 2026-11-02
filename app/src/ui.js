@@ -1,3 +1,5 @@
+import { requestTeam } from './team-api.js';
+import { renderTeamManagement } from './team-ui.js';
 import { loadDashboard, saveProfile, messageFor, ROLE_LABELS, STATUS_LABELS } from './data.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -19,9 +21,9 @@ export function showUnavailable(root) {
   root.innerHTML = `<main class="unavailable">${brand}<div class="unavailable-card">${icon('lock')}<span class="eyebrow">ÁREA PRIVADA</span><h1>Estamos preparando<br>tu espacio.</h1><p>El acceso de pruebas aún no está disponible. Puedes contactar con el equipo para conocer el siguiente paso.</p><a class="button primary" href="${contact}">Contactar con AsturPower ${icon('arrow')}</a></div><span class="subtle">AsturPower Training · Entrenar con propósito</span></main>`;
 }
 
-export function mountApp(root, client, { fixture = false } = {}) {
+export function mountApp(root, client, { fixture = false, teamRequest = requestTeam } = {}) {
   let user = null, data = null, view = 'overview', epoch = 0, disposed = false, query = '';
-  let actionBusy = false, logoutBusy = false, ignoreSession = false;
+  let actionBusy = false, logoutBusy = false, ignoreSession = false, teamBusy = false, teamPage = 0, preferredRole = null;
   const banner = fixture ? '<div class="fixture-banner">VISTA DE PRUEBA · DATOS FICTICIOS</div>' : '';
 
   function login(message = '', retryLogout = false) {
@@ -70,11 +72,13 @@ export function mountApp(root, client, { fixture = false } = {}) {
     const roleLabel = ROLE_LABELS[data.role] || 'Acceso pendiente';
     const name = data.profile?.display_name || 'Tu espacio';
     const currentTitle = view === 'profile' ? 'Mi perfil' : view === 'team' ? 'Mis deportistas' : 'Vista general';
+    const managed = renderTeamManagement(data);
+    const roleSwitcher = data.roles.length > 1 ? `<label class="workspace-switcher" for="workspace-role">Tu espacio<select id="workspace-role">${data.roles.map(role => `<option value="${role}" ${data.role === role ? 'selected' : ''}>${ROLE_LABELS[role]}</option>`).join('')}</select></label>` : '';
     const content = !data.profile ? profileForm(true) : view === 'profile' ? profileForm() : !data.role
       ? `<section class="panel pending-panel">${icon('lock')}<span class="eyebrow">PERFIL PREPARADO</span><h2>El siguiente paso es con tu equipo.</h2><p>Tu cuenta está pendiente de asignación de acceso. Contacta con AsturPower para habilitar tu espacio de entrenador o deportista.</p><a class="button primary" href="${contact}">Contactar con el equipo ${icon('arrow')}</a></section>`
-      : data.role === 'admin' ? `<section class="panel pending-panel">${icon('people')}<h2>Tu acceso de administración está identificado.</h2><p>La gestión de altas y vinculaciones está pendiente de habilitación. Tu perfil ya está disponible.</p><button class="button primary" data-view="profile">Revisar mi perfil ${icon('arrow')}</button></section>`
+      : data.role === 'admin' ? managed || `<section class="panel pending-panel">${icon('people')}<h2>Tu acceso de administración está identificado.</h2><p>La gestión de altas y vinculaciones está pendiente de habilitación. Tu perfil ya está disponible.</p><button class="button primary" data-view="profile">Revisar mi perfil ${icon('arrow')}</button></section>`
       : view === 'team' && data.role === 'coach' ? teamContent() : overview();
-    root.innerHTML = `${banner}<div class="app-shell"><aside class="sidebar">${brand}<div class="workspace-label">MI ESPACIO</div><nav aria-label="Navegación principal">${navItem('overview', 'Vista general', 'home')}${data.role === 'coach' ? navItem('team', 'Mis deportistas', 'people') : ''}${navItem('profile', 'Mi perfil', 'user')}</nav><div class="sidebar-bottom"><div class="sidebar-note"><span class="mini-dot"></span> Entorno de pruebas<p>Paso a paso, hacia<br>tu mejor versión.</p></div><button class="logout" data-logout>${icon('logout')} Cerrar sesión</button></div></aside><div class="workspace"><header class="topbar"><span>Mi espacio <i>/</i> <strong>${currentTitle}</strong></span><span class="identity"><span class="identity-text">${esc(name)}<small>${roleLabel}</small></span><span class="avatar small">${esc(initials(name))}</span></span></header><main id="main-content"><div class="page-heading"><div><span class="eyebrow">ASTURPOWER TRAINING</span><h1>${view === 'overview' ? `Hola, ${esc(name)}<span class="lime-period">.</span>` : currentTitle}</h1><p>${view === 'profile' ? 'Lo esencial para que tu equipo te conozca.' : 'Todo empieza por las personas que te acompañan.'}</p></div><button class="button secondary" data-refresh>${icon('refresh')} Actualizar</button></div><p id="notice" class="notice" role="status" aria-live="polite"></p>${content}<footer class="workspace-footer"><span>Entrenar con propósito.</span><span>AsturPower Training</span></footer></main></div></div><dialog id="athlete-detail"><button class="dialog-close" data-close-dialog aria-label="Cerrar ficha">×</button><div id="athlete-detail-content"></div></dialog>`;
+    root.innerHTML = `${banner}<div class="app-shell"><aside class="sidebar">${brand}${roleSwitcher}<div class="workspace-label">MI ESPACIO</div><nav aria-label="Navegación principal">${navItem('overview', 'Vista general', 'home')}${data.role === 'coach' ? navItem('team', 'Mis deportistas', 'people') : ''}${navItem('profile', 'Mi perfil', 'user')}</nav><div class="sidebar-bottom"><div class="sidebar-note"><span class="mini-dot"></span> Entorno de pruebas<p>Paso a paso, hacia<br>tu mejor versión.</p></div><button class="logout" data-logout>${icon('logout')} Cerrar sesión</button></div></aside><div class="workspace"><header class="topbar"><span>Mi espacio <i>/</i> <strong>${currentTitle}</strong></span><span class="identity"><span class="identity-text">${esc(name)}<small>${roleLabel}</small></span><span class="avatar small">${esc(initials(name))}</span></span></header><main id="main-content"><div class="page-heading"><div><span class="eyebrow">ASTURPOWER TRAINING</span><h1>${view === 'overview' ? `Hola, ${esc(name)}<span class="lime-period">.</span>` : currentTitle}</h1><p>${view === 'profile' ? 'Lo esencial para que tu equipo te conozca.' : 'Todo empieza por las personas que te acompañan.'}</p></div><button class="button secondary" data-refresh>${icon('refresh')} Actualizar</button></div><p id="notice" class="notice" role="status" aria-live="polite"></p>${content}${data.role !== 'admin' && view === 'overview' ? managed : ''}<footer class="workspace-footer"><span>Entrenar con propósito.</span><span>AsturPower Training</span></footer></main></div></div><dialog id="athlete-detail"><button class="dialog-close" data-close-dialog aria-label="Cerrar ficha">×</button><div id="athlete-detail-content"></div></dialog><dialog id="team-confirm"><button class="dialog-close" data-close-team aria-label="Cerrar confirmación">×</button><div id="team-confirm-content"></div></dialog>`;
     root.querySelector('#profile-form')?.addEventListener('submit', submitProfile);
     root.querySelector('#athlete-search')?.addEventListener('input', event => {
       query = event.target.value;
@@ -96,7 +100,10 @@ export function mountApp(root, client, { fixture = false } = {}) {
       if (ticket !== epoch || disposed) return;
       if (auth.error || !auth.data.user) { user = null; login(); return; }
       user = auth.data.user;
-      const next = await loadDashboard(client, user);
+      const next = await loadDashboard(client, user, preferredRole);
+      if (next.profile && next.role) {
+        try { next.team = await teamRequest(client, null, teamPage, fetch, next.role); } catch { next.team = null; }
+      }
       if (ticket !== epoch || disposed) return;
       data = next;
       render();
@@ -144,10 +151,13 @@ export function mountApp(root, client, { fixture = false } = {}) {
     if (target.classList.contains('brand')) { event.preventDefault(); view = 'overview'; render(); }
     if (target.dataset.view) { view = target.dataset.view; query = ''; render(); }
     if (target.hasAttribute('data-refresh')) await sync();
+    if (target.dataset.teamPage !== undefined) { teamPage = Number(target.dataset.teamPage); await sync(); }
+    if (target.hasAttribute('data-close-team')) root.querySelector('#team-confirm').close();
+    if (target.dataset.teamAccept || target.dataset.teamRevoke) showTeamConfirmation(target);
     if (target.hasAttribute('data-logout')) {
       if (logoutBusy) return;
       logoutBusy = true; ignoreSession = true;
-      ++epoch; user = null; data = null; view = 'overview'; query = ''; login();
+      ++epoch; user = null; data = null; view = 'overview'; query = ''; teamPage = 0; preferredRole = null; login();
       root.querySelector('#login-form button').disabled = true;
       try {
         const { error } = await client.auth.signOut({ scope: 'local' });
@@ -164,11 +174,51 @@ export function mountApp(root, client, { fixture = false } = {}) {
     if (target.hasAttribute('data-close-dialog')) root.querySelector('#athlete-detail').close();
   }
 
+  function showTeamConfirmation(target) {
+    const accepting = Boolean(target.dataset.teamAccept);
+    const coachId = target.dataset.teamAccept || target.dataset.teamRevoke;
+    const athleteId = accepting ? user.id : target.dataset.athleteId;
+    const relationship = data?.team?.links.find(r => r.coach_id === coachId && r.athlete_id === athleteId);
+    if (!relationship) return;
+    root.querySelector('#team-confirm-content').innerHTML = `<span class="eyebrow">TU EQUIPO, TU DECISIÓN</span><h2>${accepting ? 'Aceptar entrenador' : 'Desvincular del equipo'}</h2><p>${accepting ? `Vas a aceptar a ${esc(relationship.coach_name || 'este entrenador')}. Al aceptar podrá consultar tu perfil. Los datos deportivos tendrán sus permisos específicos cuando se habiliten.` : 'La vinculación dejará de estar activa. Para retomarla será necesaria una nueva propuesta y aceptación.'}</p><form data-team-form="${accepting ? 'accept' : 'revoke'}"><input type="hidden" name="coachId" value="${esc(coachId)}">${accepting ? '<label class="consent-check"><input type="checkbox" name="consent" required> Autorizo que este entrenador consulte mi perfil.</label>' : `<input type="hidden" name="athleteId" value="${esc(athleteId)}">`}<button class="button primary" type="submit">${accepting ? 'Aceptar vinculación' : 'Confirmar desvinculación'}</button><p class="form-message" data-team-error role="alert"></p></form>`;
+    root.querySelector('#team-confirm').showModal();
+  }
+
+  async function onTeamSubmit(event) {
+    const form = event.target.closest('[data-team-form]');
+    if (!form) return;
+    event.preventDefault();
+    if (teamBusy || !user) return;
+    const ticket = epoch, button = form.querySelector('button[type="submit"]');
+    const fields = new form.ownerDocument.defaultView.FormData(form);
+    const body = { ...Object.fromEntries(fields), action: form.dataset.teamForm };
+    if (body.action === 'accept') body.consent = fields.get('consent') === 'on';
+    teamBusy = true; button.disabled = true;
+    try {
+      await teamRequest(client, body, teamPage);
+      if (ticket !== epoch || disposed || ignoreSession) return;
+      await sync(); announce('Cambio guardado.');
+    } catch (error) {
+      if (ticket === epoch && !disposed) {
+        const slot = form.querySelector('[data-team-error]') || root.querySelector('#team-message');
+        if (slot) slot.textContent = error.message || 'No se ha podido guardar el cambio.';
+      }
+    } finally { teamBusy = false; button.disabled = false; }
+  }
+
+  function onWorkspaceChange(event) {
+    if (event.target.id !== 'workspace-role' || !data?.roles.includes(event.target.value)) return;
+    preferredRole = event.target.value; teamPage = 0; view = 'overview'; query = '';
+    void sync();
+  }
+
   root.addEventListener('click', onClick);
+  root.addEventListener('submit', onTeamSubmit);
+  root.addEventListener('change', onWorkspaceChange);
   const { data: authListener } = client.auth.onAuthStateChange((event, session) => {
     if (disposed) return;
     if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
-      ++epoch; user = null; data = null; query = ''; view = 'overview'; login();
+      ++epoch; user = null; data = null; query = ''; view = 'overview'; preferredRole = null; login();
     } else if (['SIGNED_IN', 'INITIAL_SESSION', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
       // Auth callbacks must remain synchronous; SDK requests run outside their lock.
       setTimeout(() => { if (!disposed) void sync(); }, 0);
@@ -179,7 +229,7 @@ export function mountApp(root, client, { fixture = false } = {}) {
   loading();
   // Makes startup independent of whether the SDK already emitted INITIAL_SESSION.
   void sync();
-  return () => { disposed = true; ++epoch; authListener.subscription.unsubscribe(); root.removeEventListener('click', onClick); root.ownerDocument.removeEventListener('visibilitychange', onVisibility); root.replaceChildren(); };
+  return () => { disposed = true; ++epoch; authListener.subscription.unsubscribe(); root.removeEventListener('click', onClick); root.removeEventListener('submit', onTeamSubmit); root.removeEventListener('change', onWorkspaceChange); root.ownerDocument.removeEventListener('visibilitychange', onVisibility); root.replaceChildren(); };
 }
 
 function initials(name) {

@@ -1,11 +1,11 @@
 # AsturPower Training — Arquitectura inicial y plan MVP
 
 **Versión:** 0.2 — 2 de noviembre de 2026  
-**Estado:** arquitectura del MVP en ejecución. La base inicial de Supabase está creada y probada. El acceso y primer panel están preparados en `desarrollo`, sin desplegar ni probar con cuentas reales. La integración Garmin no está activada. Véanse `docs/paso1-usuarios-permisos.md` y `docs/paso2-acceso-panel.md`.
+**Estado:** arquitectura del MVP en ejecución. La base inicial de Supabase está creada y probada. El acceso, el panel y el servidor básico de roles/vínculos están preparados en `desarrollo`, sin desplegar ni probar con cuentas reales. La identidad admite varios roles y las carteras están aisladas por vínculos autorizados. La integración Garmin no está activada. Véanse `docs/paso1-usuarios-permisos.md`, `docs/paso2-acceso-panel.md` y `docs/paso3-varios-entrenadores.md`.
 
 ## 1. Objetivo
 
-Construir una primera versión sencilla y segura para un entrenador con varios deportistas. Debe permitir que cada persona inicie sesión, que el entrenador asigne entrenamientos y que el deportista vea sus sesiones. Más adelante se conectarán Activity API y Training API oficiales de Garmin.
+Construir una plataforma sencilla y segura para varios entrenadores independientes, cada uno con su cartera autorizada. El piloto inicial tendrá un entrenador y dos ciclistas reales: Mauro y Enol. Debe permitir que cada persona inicie sesión, que el entrenador asigne entrenamientos y que el deportista vea sus sesiones. Más adelante se conectarán Activity API y Training API oficiales de Garmin.
 
 **Estado actual comprobado:** la página informativa y la política de privacidad se encuentran en este repositorio y están publicadas en Netlify. Garmin Developer permite preparar un registro de aplicación, pero según el informe de revisión del portal facilitado el 2 de noviembre **todavía no hay una aplicación Garmin registrada ni credenciales activas**.
 
@@ -53,7 +53,7 @@ Fuera de alcance inicial: pagos, entrenamientos generados automáticamente por I
 
 | Entidad | Datos mínimos | Regla esencial |
 |---|---|---|
-| `profiles` | `user_id`, nombre visible, estado, rol controlado por servidor | Vinculado a identidad autenticada; el usuario no puede autoasignarse privilegios |
+| `profiles` | `user_id`, nombre visible, fecha de creación | Identidad propia, independiente del entrenador |\n| `user_roles` | `(user_id, role)` con roles acumulables | Una persona puede ser entrenador y deportista; asignación controlada desde servidor |
 | `coach_athletes` | `coach_id`, `athlete_id`, `status`, fecha de vinculación | Una relación autorizada permite acceso limitado al entrenador |
 | `workouts` | `id`, `coach_id`, deporte, nombre, pasos estructurados, versión | El entrenador gestiona sus propios entrenamientos |
 | `workout_assignments` | `id`, `workout_id`, `athlete_id`, fecha programada, estado | Solo entrenador vinculado asigna o cambia sesiones |
@@ -108,7 +108,7 @@ Las APIs Garmin **no han sido probadas** con una aplicación de AsturPower todav
 |---|---|---|
 | H0 | Web informativa y política inicial publicadas | Realizado |
 | H1 | Arquitectura inicial y datos documentados | Diseño |
-| H2 | Entorno de pruebas, autenticación, tablas con RLS y pruebas de aislamiento | Base aplicada y 36 pruebas SQL superadas; acceso/panel preparado, pendiente de despliegue y prueba con cuenta real |
+| H2 | Entorno de pruebas, autenticación, tablas con RLS y pruebas de aislamiento | Base multirrol aplicada; 58 pruebas SQL y 44 pruebas de aplicación/servidor superadas; pendiente de despliegue y cuenta real |
 | H3 | Entrenador invita a deportista y asigna entrenamiento sencillo; calendario visible | Pendiente |
 | H4 | Endpoints HTTPS y OAuth implementados y probados sin secretos expuestos | Pendiente |
 | H5 | Alta Garmin Starter registrada con Activity y Training, credenciales seguras | Pendiente |
@@ -116,7 +116,7 @@ Las APIs Garmin **no han sido probadas** con una aplicación de AsturPower todav
 
 ## 9. Próxima acción concreta
 
-**Próxima acción:** preparar un despliegue de pruebas separado, revisar Auth y autorizar la primera cuenta. La organización Supabase independiente ya está en Free y las tres tablas iniciales están probadas. El panel de `desarrollo` permite acceso, perfil propio y consulta de vínculos existentes; invitaciones y administración autorizada siguen pendientes. Después se abordarán planificación, rutas y alta Garmin.
+**Próxima acción:** preparar un despliegue de pruebas separado, revisar Auth y autorizar la primera cuenta. La organización Supabase independiente ya está en Free y las tres tablas iniciales están probadas con múltiples entrenadores. El panel de `desarrollo` permite acceso, perfil propio y cambio de espacio entre roles concedidos. El servidor básico de roles y vínculos con consentimiento está preparado pero desactivado; el envío de invitaciones sigue pendiente. Después se abordarán planificación, rutas y alta Garmin.
 
 No introducir datos de salud reales ni secretos en el repositorio público. No sustituir la página pública existente hasta contar con pruebas y copia de seguridad.
 
@@ -130,3 +130,4 @@ No introducir datos de salud reales ni secretos en el repositorio público. No s
 - Netlify Functions, secretos y variables: https://docs.netlify.com/build/functions/environment-variables/
 
 **Nota:** las especificaciones más detalladas de OAuth, webhook, límites y formato de datos deben comprobarse en la documentación habilitada para la aplicación Garmin antes de escribir la integración.  
+

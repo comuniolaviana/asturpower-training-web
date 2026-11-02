@@ -8,10 +8,10 @@ Estado: código preparado y probado en `desarrollo`. No se ha desplegado ni modi
 - Inicio de sesión mediante el SDK oficial `@supabase/supabase-js` y correo/contraseña de una cuenta previamente habilitada en Auth.
 - Sesión por pestaña en `sessionStorage`, renovación mediante SDK, verificación de usuario con `getUser()` y limpieza de vistas al cerrar sesión. Los tokens Supabase no se imprimen ni se incluyen en el código; la integración Garmin futura mantendrá sus tokens en servidor.
 - Perfil propio: creación inicial y edición únicamente de `display_name`. Correo de la identidad, roles y relaciones no se actualizan desde el formulario.
-- Lectura del rol desde `user_roles`; los metadatos editables no conceden privilegios. Las cuentas sin rol quedan pendientes. No existe registro público ni selector de privilegios.
+- Lectura de roles desde `user_roles`; los metadatos editables no conceden privilegios. Las cuentas sin rol quedan pendientes. Una identidad puede tener varios roles y cambiar de espacio entre ellos; el selector no concede privilegios. No existe registro público.
 - Entrenador: lista y búsqueda de deportistas con relación activa y ficha mínima; contadores reales de relaciones activas y pendientes.
-- Deportista: perfil propio y estados de sus vínculos. No se muestran nombres de entrenadores que RLS no permita leer.
-- Administrador: estado identificado, sin controles que aparenten administrar altas antes de implementar el servidor autorizado.
+- Deportista: perfil propio y estados de sus vínculos. Si el servidor de gestión está habilitado, se muestra el nombre del entrenador de una propuesta propia para poder aceptarla con consentimiento.
+- Administrador de plataforma: el código permite añadir roles coach/athlete a perfiles existentes y proponer vínculos pendientes mediante el servidor autorizado. El deportista debe aceptar. Sin configuración de servidor, esos controles no se habilitan.
 - Estados vacíos, errores, reintentos, salida de sesión, adaptación móvil y escape de datos en el HTML.
 
 ## Estado previo de Supabase
@@ -55,7 +55,7 @@ Vista ficticia: habilitar `ASTURPOWER_QA=true` solo en el entorno local de desar
 3. Actualizar la política de privacidad para el tratamiento real de cuentas y perfiles. La publicada aún cubre el sitio informativo.
 4. Habilitar la primera cuenta de prueba y asignar su rol mediante proceso autorizado; ninguna persona obtiene admin por registrarse.
 5. Probar inicio/cierre de sesión y renovación reales. No se han solicitado ni generado contraseñas, enviado invitaciones ni usado datos reales.
-6. Implementar el servidor de invitaciones, aprobación de roles y consentimiento de vinculaciones; luego calendarios y entrenamientos. Esta entrega consulta vínculos existentes, no los crea ni activa.
+6. Revisar y habilitar el servidor de roles y consentimiento de vinculaciones ya preparado. No está desplegado ni activado y no se han creado vínculos reales. El envío de invitaciones por correo y las altas de cuentas siguen pendientes; después vendrán calendarios y entrenamientos. Véase `docs/paso3-varios-entrenadores.md`.
 7. Registrar Garmin y activar OAuth únicamente tras autorización. No hay una conexión Garmin operativa en el panel.
 
 Referencias revisadas: https://supabase.com/docs/reference/javascript/auth-signinwithpassword ; https://supabase.com/docs/reference/javascript/auth-onauthstatechange ; https://supabase.com/docs/guides/database/postgres/row-level-security

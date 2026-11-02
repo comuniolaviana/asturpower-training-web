@@ -7,4 +7,7 @@ const options = scenario === 'login' ? { signedIn: false }
   : scenario === 'pending' ? { role: null }
   : scenario === 'onboarding' ? { profile: false, role: null }
   : scenario === 'error' ? { fail: true } : {};
-mountApp(document.querySelector('#app'), fakeClient(options), { fixture: true });
+if (scenario === 'dual') options.roles = ['coach', 'athlete'];
+const client = fakeClient(options);
+if (scenario === 'dual') client.state.tables.coach_athletes.push({ coach_id: '44444444-4444-4444-8444-444444444444', athlete_id: client.state.user.id, status: 'active' });
+mountApp(document.querySelector('#app'), client, { fixture: true });

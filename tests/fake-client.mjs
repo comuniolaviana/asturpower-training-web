@@ -1,13 +1,13 @@
 // Synthetic fixture client. Only imported from tests; no connection to Supabase.
 export const IDs = { coach: '11111111-1111-4111-8111-111111111111', a: '22222222-2222-4222-8222-222222222222', b: '33333333-3333-4333-8333-333333333333' };
-export function fakeClient({ role = 'coach', profile = true, signedIn = true, name = 'Álex Prueba', fail = false, delay = 0 } = {}) {
+export function fakeClient({ role = 'coach', profile = true, signedIn = true, name = 'Álex Prueba', fail = false, delay = 0, roles = role ? [role] : [] } = {}) {
   const user = { id: role === 'athlete' ? IDs.a : IDs.coach, email: 'pruebas@example.test', user_metadata: { role: 'admin' } };
   const own = profile ? { user_id: user.id, display_name: name, created_at: '2026-11-02T12:00:00Z' } : null;
   const state = {
     signedIn, user, writes: [],
     tables: {
       profiles: [own, { user_id: IDs.a, display_name: 'Lucía Ejemplo' }, { user_id: IDs.b, display_name: 'Diego Prueba' }].filter(Boolean).filter((v, i, all) => all.findIndex(a => a.user_id === v.user_id) === i),
-      user_roles: role ? [{ user_id: user.id, role }] : [],
+      user_roles: roles.map(role => ({ user_id: user.id, role })),
       coach_athletes: [
         { coach_id: IDs.coach, athlete_id: IDs.a, status: 'active', created_at: '2026-11-01T12:00:00Z' },
         { coach_id: IDs.coach, athlete_id: IDs.b, status: 'active', created_at: '2026-11-02T12:00:00Z' },

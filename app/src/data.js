@@ -1,4 +1,5 @@
-export const ROLE_LABELS = { admin: 'Administrador', coach: 'Entrenador', athlete: 'Deportista' };
+import { ROLE_LABELS, normalizeRoles, chooseWorkspace } from '../../shared/roles.mjs';
+export { ROLE_LABELS };
 export const STATUS_LABELS = { active: 'Activa', pending: 'Pendiente', revoked: 'Revocada' };
 
 function checked(result) {
@@ -13,15 +14,15 @@ export function validateName(value) {
 }
 
 // RLS is the authority. Roles always come from user_roles, never user_metadata.
-export async function loadDashboard(client, user) {
+export async function loadDashboard(client, user, preferredRole = null) {
   const [profileResult, roleResult] = await Promise.all([
     client.from('profiles').select('user_id,display_name,created_at').eq('user_id', user.id).maybeSingle(),
-    client.from('user_roles').select('role').eq('user_id', user.id).maybeSingle(),
+    client.from('user_roles').select('role').eq('user_id', user.id),
   ]);
   const profile = checked(profileResult);
-  const rawRole = checked(roleResult)?.role;
-  const role = Object.hasOwn(ROLE_LABELS, rawRole) ? rawRole : null;
-  if (!profile || !role) return { profile, role, relationships: [], athletes: [] };
+  const roles = normalizeRoles(checked(roleResult));
+  const role = chooseWorkspace(roles, preferredRole);
+  if (!profile || !role || role === 'admin') return { profile, role, roles, relationships: [], athletes: [] };
   const relationships = checked(await client.from('coach_athletes')
     .select('coach_id,athlete_id,status,created_at')
     .eq(role === 'coach' ? 'coach_id' : 'athlete_id', user.id)
@@ -29,7 +30,7 @@ export async function loadDashboard(client, user) {
   const ids = role === 'coach' ? relationships.filter(r => r.status === 'active').map(r => r.athlete_id) : [];
   const athletes = ids.length ? checked(await client.from('profiles')
     .select('user_id,display_name').in('user_id', ids).order('display_name')) || [] : [];
-  return { profile, role, relationships, athletes };
+  return { profile, role, roles, relationships, athletes };
 }
 
 export async function saveProfile(client, user, value, exists) {
