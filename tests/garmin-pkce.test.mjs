@@ -64,7 +64,7 @@ test('Garmin OAuth completo simulado: autorización, canje, permisos y vinculaci
               select(){return this;},
               async maybeSingle(){
                 const eligible=!spent && pending &&
-                  filters.every(([k,v])=>k==='expires_at'?pending[k]>v:pending[k]===v);
+                  filters.every(([k,v])=>k==='expires_at'?pending[k]>v:v===null?pending[k]==null:pending[k]===v);
                 if(!eligible)return {data:null,error:null};
                 spent=true;
                 return {data:{athlete_id:athleteId,verifier_ciphertext:pending.verifier_ciphertext,redirect_uri:pending.redirect_uri},error:null};
