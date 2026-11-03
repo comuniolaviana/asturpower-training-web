@@ -64,12 +64,37 @@ function assertResult(result) {
   return result.data||[];
 }
 
+
+/* Nunca usar service_role en navegador. Supabase RLS valida entrenador y vinculación activa. */
+export async function updatePlannedWorkout(client,coachId,workoutId,values){
+  if(!coachId||!workoutId)throw new Error('No se ha identificado la sesión.');
+  const payload=validateWorkout(values);
+  const result=await client.from('planned_workouts')
+    .update(payload).eq('id',workoutId).eq('coach_id',coachId)
+    .select('id').single();
+  const saved=assertResult(result);
+  if(!saved?.id)throw new Error('No se ha podido actualizar el entrenamiento.');
+  return saved;
+}
+
+export async function deletePlannedWorkout(client,coachId,workoutId){
+  if(!coachId||!workoutId)throw new Error('No se ha identificado la sesión.');
+  const result=await client.from('planned_workouts')
+    .delete().eq('id',workoutId).eq('coach_id',coachId)
+    .select('id');
+  const removed=assertResult(result);
+  if(!Array.isArray(removed)||removed.length!==1||removed[0].id!==workoutId){
+    throw new Error('No se ha podido eliminar el entrenamiento.');
+  }
+  return removed[0];
+}
+
 export async function mountPlanner({root,client,user,role}) {
   if(!root||!client?.from||!user?.id||!['coach','athlete'].includes(role))return;
   let month=new Date();
   month=new Date(month.getFullYear(),month.getMonth(),1);
   let day=isoDate(new Date());
-  let workouts=[],athletes=[],notice='',busy=false;
+  let workouts=[],athletes=[],notice='',busy=false,editingId=null,deleteId=null;
   const range=()=>[isoDate(month),isoDate(new Date(month.getFullYear(),month.getMonth()+1,1))];
 
   async function load() {
@@ -125,7 +150,7 @@ export async function mountPlanner({root,client,user,role}) {
     for(const date of calendarDays(month.getFullYear(),month.getMonth())){
       if(!date){grid.append(node('span','ap-blank'));continue;}
       const count=workouts.filter(w=>w.scheduled_date===date).length;
-      const cell=button(String(Number(date.slice(-2)))+(count?' ·'+count:''),'ap-day'+(date===day?' chosen':''),()=>{day=date;paint();});
+      const cell=button(String(Number(date.slice(-2)))+(count?' ·'+count:''),'ap-day'+(date===day?' chosen':''),()=>{day=date;editingId=null;deleteId=null;paint();});
       cell.setAttribute('aria-label',date+': '+count+' entrenamientos');
       cell.setAttribute('aria-pressed',String(date===day));
       grid.append(cell);
@@ -142,6 +167,33 @@ export async function mountPlanner({root,client,user,role}) {
       card.append(node('p','', (SPORTS[w.sport]||'Deporte')+' · '+w.duration_minutes+' min'+(name?' · '+name:'')));
       if(w.intensity_target)card.append(node('p','','Objetivo: '+w.intensity_target));
       if(w.coach_notes)card.append(node('p','','Indicaciones: '+w.coach_notes));
+      if(role==='coach'){
+        const actions=node('div','ap-workout-actions');
+        actions.append(
+          button('Editar','ap-action',()=>{
+            if(busy)return;
+            editingId=w.id;deleteId=null;
+            paint();
+            root.querySelector('#ap-workout-form')?.scrollIntoView?.({behavior:'smooth',block:'nearest'});
+          }),
+          button('Eliminar','ap-action ap-danger',()=>{
+            if(busy)return;
+            deleteId=deleteId===w.id?null:w.id;
+            editingId=null;
+            paint();
+          })
+        );
+        card.append(actions);
+        if(deleteId===w.id){
+          const confirm=node('div','ap-delete-confirm');
+          confirm.append(node('p','','¿Eliminar definitivamente «'+w.title+'»? Esta acción no se puede deshacer.'));
+          confirm.append(
+            button('Sí, eliminar','ap-action ap-danger',()=>void deleteSelected(w)),
+            button('Cancelar','ap-action',()=>{deleteId=null;paint();})
+          );
+          card.append(confirm);
+        }
+      }
       list.append(card);
     }
     wrap.append(list);
@@ -152,49 +204,81 @@ export async function mountPlanner({root,client,user,role}) {
   function move(step) {
     month=new Date(month.getFullYear(),month.getMonth()+step,1);
     day=isoDate(month);
+    editingId=null;deleteId=null;
     void load();
   }
 
+
+  async function deleteSelected(workout){
+    if(busy||role!=='coach')return;
+    busy=true;notice='Eliminando entrenamiento…';paint();
+    try{
+      await deletePlannedWorkout(client,user.id,workout.id);
+      if(editingId===workout.id)editingId=null;
+      deleteId=null;
+      await load();
+      notice='Entrenamiento eliminado correctamente.';
+      paint();
+    }catch(error){
+      notice=error?.message||'No se ha podido eliminar el entrenamiento.';
+      paint();
+    }finally{busy=false;}
+  }
+
   function workoutForm(){
+    const current=editingId ? workouts.find(w=>w.id===editingId) : null;
     const form=node('form','ap-box ap-form');
-    form.append(node('h3','','Programar entrenamiento'));
-    if(!athletes.length){
+    form.id='ap-workout-form';
+    form.append(node('h3','',current?'Editar entrenamiento':'Programar entrenamiento'));
+    if(!current && !athletes.length){
       form.append(node('p','ap-muted','Todavía no tienes deportistas vinculados activamente.'));
       return form;
     }
     const athlete=node('select','ap-input');
     athlete.name='athlete_id';
-    for(const person of athletes){
+    const people=current
+      ? [{id:current.athlete_id,name:athletes.find(a=>a.id===current.athlete_id)?.name||'Deportista'}]
+      : athletes;
+    for(const person of people){
       const option=node('option','',person.name);
       option.value=person.id;
       athlete.append(option);
     }
-    const date=fieldInput('scheduled_date','date');date.value=day;date.required=true;
-    const name=fieldInput('title','text','Rodaje de resistencia',160);name.required=true;
-    const duration=fieldInput('duration_minutes','number');duration.min='1';duration.max='1440';duration.value='90';duration.required=true;
+    if(current)athlete.disabled=true; // Cambiar el destinatario exige crear otra sesión.
+    const date=fieldInput('scheduled_date','date');date.value=current?.scheduled_date||day;date.required=true;
+    const name=fieldInput('title','text','Rodaje de resistencia',160);name.value=current?.title||'';name.required=true;
+    const duration=fieldInput('duration_minutes','number');duration.min='1';duration.max='1440';duration.value=String(current?.duration_minutes||90);duration.required=true;
     const sport=node('select','ap-input');sport.name='sport';
     for(const [value,label] of Object.entries(SPORTS)){
       const option=node('option','',label);option.value=value;sport.append(option);
     }
-    const target=fieldInput('intensity_target','text','Zona 2 de potencia',180);
-    const notes=node('textarea','ap-input');notes.name='coach_notes';notes.maxLength=3000;notes.rows=3;notes.placeholder='Indicaciones del entrenador…';
-    const save=node('button','ap-save','Guardar entrenamiento');save.type='submit';
+    sport.value=current?.sport||'cycling';
+    const target=fieldInput('intensity_target','text','Zona 2 de potencia',180);target.value=current?.intensity_target||'';
+    const notes=node('textarea','ap-input');notes.name='coach_notes';notes.maxLength=3000;notes.rows=3;notes.placeholder='Indicaciones del entrenador…';notes.value=current?.coach_notes||'';
+    const save=node('button','ap-save',current?'Guardar cambios':'Guardar entrenamiento');save.type='submit';
     const status=node('p','ap-status');status.setAttribute('role','status');
     form.append(labelled('Deportista',athlete),labelled('Fecha',date),labelled('Título',name),labelled('Duración (minutos)',duration),labelled('Deporte',sport),labelled('Objetivo',target),labelled('Indicaciones',notes),save,status);
+    if(current)form.append(button('Cancelar edición','ap-action',()=>{editingId=null;paint();}));
     form.addEventListener('submit',async event=>{
       event.preventDefault();
       if(busy)return;
       busy=true;save.disabled=true;status.textContent='Guardando…';
       try{
         const payload=validateWorkout({title:name.value,scheduled_date:date.value,duration_minutes:duration.value,sport:sport.value,intensity_target:target.value,coach_notes:notes.value});
-        const response=await client.from('planned_workouts')
-          .insert({...payload,coach_id:user.id,athlete_id:athlete.value,status:'planned'})
-          .select('id').single();
-        assertResult(response);
+        if(current){
+          await updatePlannedWorkout(client,user.id,current.id,payload);
+        }else{
+          const response=await client.from('planned_workouts')
+            .insert({...payload,coach_id:user.id,athlete_id:athlete.value,status:'planned'})
+            .select('id').single();
+          const saved=assertResult(response);
+          if(!saved?.id)throw new Error('No se ha podido confirmar el guardado.');
+        }
         const [yy,mm]=date.value.split('-').map(Number);
         month=new Date(yy,mm-1,1);day=date.value;
+        editingId=null;deleteId=null;
         await load();
-        notice='Entrenamiento guardado correctamente.';
+        notice=current?'Entrenamiento actualizado correctamente.':'Entrenamiento guardado correctamente.';
         paint();
       }catch(error){
         status.textContent=error?.message||'No se ha podido guardar la sesión.';
