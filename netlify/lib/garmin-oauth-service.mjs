@@ -193,3 +193,57 @@ export function createGarminCallbackHandler({env=process.env,createClientFn=crea
     }catch{return landing('failed');}
   };
 }
+
+/**
+ * Revoca la autorización en Garmin, como exige la especificación oficial del
+ * Developer Program, y elimina la copia local de los tokens. Solo deportistas
+ * autenticados pueden desconectar su propia cuenta.
+ */
+export function createGarminDisconnectHandler({env=process.env,verify=authenticateActor,createClientFn=createClient,fetcher=fetch}={}){
+  return async request=>{
+    if(request.method!=='POST')return json({error:'method_not_allowed'},405);
+    const settings=validConfiguration(env);
+    if(!settings)return json({error:'garmin_not_configured'},503);
+    try{
+      const actor=await requireAthlete(request,settings,verify);
+      if(!actor)return json({error:'not_authorized'},403);
+      const service=createService(settings,env,createClientFn);
+      const connection=check(await service.from('garmin_connections')
+        .select('access_token_ciphertext,refresh_token_ciphertext,access_expires_at,refresh_expires_at')
+        .eq('athlete_id',actor.id).maybeSingle());
+      if(!connection)return json({disconnected:true});
+      let access=decryptedSecret(connection.access_token_ciphertext,env.GARMIN_TOKEN_ENCRYPTION_KEY,'access:'+actor.id);
+      if(new Date(connection.access_expires_at).getTime()<Date.now()+120000){
+        if(new Date(connection.refresh_expires_at).getTime()<Date.now()+120000)return json({error:'reauthorization_required'},409);
+        const refresh=decryptedSecret(connection.refresh_token_ciphertext,env.GARMIN_TOKEN_ENCRYPTION_KEY,'refresh:'+actor.id);
+        const credentials=Buffer.from(env.GARMIN_CLIENT_ID+':'+env.GARMIN_CLIENT_SECRET).toString('base64');
+        const token=await responseJson(await fetcher(TOKEN_URL,{
+          method:'POST',
+          headers:{Authorization:'Basic '+credentials,'Content-Type':'application/x-www-form-urlencoded'},
+          body:new URLSearchParams({grant_type:'refresh_token',refresh_token:refresh}).toString(),
+        }));
+        if(typeof token.access_token!=='string'||typeof token.refresh_token!=='string'
+          ||!Number.isFinite(Number(token.expires_in))||!Number.isFinite(Number(token.refresh_token_expires_in))
+          ||Number(token.expires_in)<=600||Number(token.refresh_token_expires_in)<=600)throw new Error('invalid_refresh_response');
+        access=token.access_token;
+        const now=Date.now();
+        // Actualizar el token rotado para que un fallo temporal no impida reintentar la desconexión.
+        check(await service.from('garmin_connections').update({
+          access_token_ciphertext:encryptedSecret(token.access_token,env.GARMIN_TOKEN_ENCRYPTION_KEY,'access:'+actor.id),
+          refresh_token_ciphertext:encryptedSecret(token.refresh_token,env.GARMIN_TOKEN_ENCRYPTION_KEY,'refresh:'+actor.id),
+          access_expires_at:new Date(now+(Number(token.expires_in)-600)*1000).toISOString(),
+          refresh_expires_at:new Date(now+(Number(token.refresh_token_expires_in)-600)*1000).toISOString(),
+          updated_at:new Date().toISOString(),
+        }).eq('athlete_id',actor.id));
+      }
+      const revoked=await fetcher('https://apis.garmin.com/partner-gateway/rest/user/registration',{
+        method:'DELETE',headers:{Authorization:'Bearer '+access,Accept:'application/json'},
+      });
+      if(!revoked.ok)throw new Error('garmin_revocation_failed');
+      check(await service.from('garmin_connections').delete().eq('athlete_id',actor.id));
+      return json({disconnected:true});
+    }catch{
+      return json({error:'garmin_disconnect_failed'},503);
+    }
+  };
+}
