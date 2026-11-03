@@ -1,4 +1,6 @@
 import { requestTeam } from './team-api.js';
+import { mountPlanner } from './planning.js';
+import './planning.css';
 import { renderTeamManagement } from './team-ui.js';
 import { loadDashboard, saveProfile, messageFor, ROLE_LABELS, STATUS_LABELS } from './data.js';
 
@@ -7,6 +9,7 @@ const glyphs = {
   home: '<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/>',
   people: '<circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 4a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v3"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/>',
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
   lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0M12 14v3"/>',
   refresh: '<path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/>',
@@ -71,15 +74,20 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
     if (!user || !data) return;
     const roleLabel = ROLE_LABELS[data.role] || 'Acceso pendiente';
     const name = data.profile?.display_name || 'Tu espacio';
-    const currentTitle = view === 'profile' ? 'Mi perfil' : view === 'team' ? 'Mis deportistas' : 'Vista general';
+    const currentTitle = view === 'profile' ? 'Mi perfil' : view === 'team' ? 'Mis deportistas' : view === 'calendar' ? 'Calendario' : 'Vista general';
     const managed = renderTeamManagement(data);
     const roleSwitcher = data.roles.length > 1 ? `<label class="workspace-switcher" for="workspace-role">Tu espacio<select id="workspace-role">${data.roles.map(role => `<option value="${role}" ${data.role === role ? 'selected' : ''}>${ROLE_LABELS[role]}</option>`).join('')}</select></label>` : '';
     const content = !data.profile ? profileForm(true) : view === 'profile' ? profileForm() : !data.role
       ? `<section class="panel pending-panel">${icon('lock')}<span class="eyebrow">PERFIL PREPARADO</span><h2>El siguiente paso es con tu equipo.</h2><p>Tu cuenta está pendiente de asignación de acceso. Contacta con AsturPower para habilitar tu espacio de entrenador o deportista.</p><a class="button primary" href="${contact}">Contactar con el equipo ${icon('arrow')}</a></section>`
       : data.role === 'admin' ? managed || `<section class="panel pending-panel">${icon('people')}<h2>Tu acceso de administración está identificado.</h2><p>La gestión de altas y vinculaciones está pendiente de habilitación. Tu perfil ya está disponible.</p><button class="button primary" data-view="profile">Revisar mi perfil ${icon('arrow')}</button></section>`
+      : view === 'calendar' ? '<section class="panel planner-panel"><div id="planning-calendar"></div></section>'
       : view === 'team' && data.role === 'coach' ? teamContent() : overview();
-    root.innerHTML = `${banner}<div class="app-shell"><aside class="sidebar">${brand}${roleSwitcher}<div class="workspace-label">MI ESPACIO</div><nav aria-label="Navegación principal">${navItem('overview', 'Vista general', 'home')}${data.role === 'coach' ? navItem('team', 'Mis deportistas', 'people') : ''}${navItem('profile', 'Mi perfil', 'user')}</nav><div class="sidebar-bottom"><div class="sidebar-note"><span class="mini-dot"></span> Entorno de pruebas<p>Paso a paso, hacia<br>tu mejor versión.</p></div><button class="logout" data-logout>${icon('logout')} Cerrar sesión</button></div></aside><div class="workspace"><header class="topbar"><span>Mi espacio <i>/</i> <strong>${currentTitle}</strong></span><span class="identity"><span class="identity-text">${esc(name)}<small>${roleLabel}</small></span><span class="avatar small">${esc(initials(name))}</span></span></header><main id="main-content"><div class="page-heading"><div><span class="eyebrow">ASTURPOWER TRAINING</span><h1>${view === 'overview' ? `Hola, ${esc(name)}<span class="lime-period">.</span>` : currentTitle}</h1><p>${view === 'profile' ? 'Lo esencial para que tu equipo te conozca.' : 'Todo empieza por las personas que te acompañan.'}</p></div><button class="button secondary" data-refresh>${icon('refresh')} Actualizar</button></div><p id="notice" class="notice" role="status" aria-live="polite"></p>${content}${data.role !== 'admin' && view === 'overview' ? managed : ''}<footer class="workspace-footer"><span>Entrenar con propósito.</span><span>AsturPower Training</span></footer></main></div></div><dialog id="athlete-detail"><button class="dialog-close" data-close-dialog aria-label="Cerrar ficha">×</button><div id="athlete-detail-content"></div></dialog><dialog id="team-confirm"><button class="dialog-close" data-close-team aria-label="Cerrar confirmación">×</button><div id="team-confirm-content"></div></dialog>`;
+    root.innerHTML = `${banner}<div class="app-shell"><aside class="sidebar">${brand}${roleSwitcher}<div class="workspace-label">MI ESPACIO</div><nav aria-label="Navegación principal">${navItem('overview', 'Vista general', 'home')}${data.role === 'coach' ? navItem('team', 'Mis deportistas', 'people') : ''}${['coach', 'athlete'].includes(data.role) ? navItem('calendar', 'Calendario', 'calendar') : ''}${navItem('profile', 'Mi perfil', 'user')}</nav><div class="sidebar-bottom"><div class="sidebar-note"><span class="mini-dot"></span> Entorno de pruebas<p>Paso a paso, hacia<br>tu mejor versión.</p></div><button class="logout" data-logout>${icon('logout')} Cerrar sesión</button></div></aside><div class="workspace"><header class="topbar"><span>Mi espacio <i>/</i> <strong>${currentTitle}</strong></span><span class="identity"><span class="identity-text">${esc(name)}<small>${roleLabel}</small></span><span class="avatar small">${esc(initials(name))}</span></span></header><main id="main-content"><div class="page-heading"><div><span class="eyebrow">ASTURPOWER TRAINING</span><h1>${view === 'overview' ? `Hola, ${esc(name)}<span class="lime-period">.</span>` : currentTitle}</h1><p>${view === 'profile' ? 'Lo esencial para que tu equipo te conozca.' : 'Todo empieza por las personas que te acompañan.'}</p></div><button class="button secondary" data-refresh>${icon('refresh')} Actualizar</button></div><p id="notice" class="notice" role="status" aria-live="polite"></p>${content}${data.role !== 'admin' && view === 'overview' ? managed : ''}<footer class="workspace-footer"><span>Entrenar con propósito.</span><span>AsturPower Training</span></footer></main></div></div><dialog id="athlete-detail"><button class="dialog-close" data-close-dialog aria-label="Cerrar ficha">×</button><div id="athlete-detail-content"></div></dialog><dialog id="team-confirm"><button class="dialog-close" data-close-team aria-label="Cerrar confirmación">×</button><div id="team-confirm-content"></div></dialog>`;
     root.querySelector('#profile-form')?.addEventListener('submit', submitProfile);
+    const calendarRoot = root.querySelector('#planning-calendar');
+    if (calendarRoot && ['coach', 'athlete'].includes(data.role)) {
+      void mountPlanner({ root: calendarRoot, client, user, role: data.role });
+    }
     root.querySelector('#athlete-search')?.addEventListener('input', event => {
       query = event.target.value;
       root.querySelector('#athlete-list').innerHTML = athleteCards();
