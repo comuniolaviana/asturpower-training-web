@@ -60,12 +60,33 @@ export async function mountGarminPanel({root,client,user,role}){
     if(!p.includes('WORKOUT_IMPORT'))wrap.append(el('p','garmin-warning','No se ha concedido permiso para recibir entrenamientos en Garmin.'));
     if(!p.includes('ACTIVITY_EXPORT'))wrap.append(el('p','garmin-warning','No se ha concedido permiso para compartir actividades.'));
     wrap.append(el('p','garmin-warning','La cuenta está vinculada, pero el envío y la recepción automáticos siguen pendientes de pruebas.'));
+    const disconnect=el('button','button','Desconectar Garmin');
+    disconnect.type='button';
+    disconnect.addEventListener('click',async()=>{
+      if(!window.confirm('¿Desconectar Garmin Connect de AsturPower? Se revocará el acceso y se eliminarán las credenciales guardadas.'))return;
+      disconnect.disabled=true;
+      status.textContent='Revocando autorización de Garmin…';
+      try{
+        const response=await request(client,'garmin-disconnect','POST');
+        if(!response.disconnected)throw new Error('No se pudo desconectar Garmin.');
+        await mountGarminPanel({root,client,user,role});
+      }catch(error){
+        status.textContent=error.message||'No se pudo desconectar Garmin. Inténtalo de nuevo.';
+        disconnect.disabled=false;
+      }
+    });
+    wrap.append(disconnect);
     return;
   }
   status.textContent='Conexión disponible: debes autorizar personalmente qué datos compartes con AsturPower.';
+  const policy=el('p','garmin-privacy');
+  const policyLink=el('a','', 'Información sobre privacidad y datos de Garmin');
+  policyLink.href='https://asturpower-training.netlify.app/privacidad-garmin.html';
+  policyLink.target='_blank';policyLink.rel='noopener noreferrer';
+  policy.append(policyLink);wrap.append(policy);
   const consent=el('label','garmin-optin');
   const checkbox=el('input');checkbox.type='checkbox';
-  consent.append(checkbox,el('span','','Entiendo que Garmin me pedirá autorización para compartir actividades y recibir entrenamientos. Podré revocarla desde Garmin Connect.'));
+  consent.append(checkbox,el('span','','Acepto voluntariamente conectar mi cuenta Garmin y autorizo el tratamiento de los datos deportivos que seleccione en Garmin Connect, incluidos datos fisiológicos como la frecuencia cardíaca si están disponibles, para el seguimiento de mi entrenamiento por AsturPower y mi entrenador autorizado. He leído la información de privacidad y puedo retirar la autorización.'));
   const start=el('button','button primary','Conectar Garmin Connect');
   start.type='button';start.disabled=true;
   checkbox.addEventListener('change',()=>{start.disabled=!checkbox.checked;});
