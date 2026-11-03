@@ -29,3 +29,12 @@
 .ap-save:hover{background:#b7e576;}
 .ap-save:disabled{opacity:.6;}
 @media(min-width:650px){.ap-grid{gap:8px}.ap-day{min-height:68px}}
+
+.ap-workout-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px;}
+.ap-action{min-height:42px;border:1px solid #9db79e;border-radius:8px;background:#fff;color:#23503b;padding:9px 14px;font-size:.9rem;font-weight:700;cursor:pointer;}
+.ap-action:hover{background:#e7efdf;}
+.ap-action.ap-danger{border-color:#b76758;color:#9b3427;}
+.ap-action.ap-danger:hover{background:#fceeea;}
+.ap-delete-confirm{border:1px solid #deb7af;border-radius:10px;margin-top:12px;padding:12px;background:#fff9f6;}
+.ap-delete-confirm p{color:#65372f;margin:0 0 10px;}
+.ap-delete-confirm .ap-action{margin-right:8px;margin-bottom:5px;}
