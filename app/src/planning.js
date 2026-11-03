@@ -1,5 +1,7 @@
 
 /* Calendario MVP; la autorización definitiva la aplica Supabase RLS. */
+import { validateSteps, stepsTotalSeconds, describeStep } from './structured-steps.js';
+import { createStepsEditor } from './structured-steps-ui.js';
 const SPORTS = { cycling: 'Ciclismo', running: 'Carrera', swimming: 'Natación', strength: 'Fuerza', other: 'Otro' };
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
@@ -31,7 +33,12 @@ export function validateWorkout(values) {
   if(dt.getFullYear()!==year||dt.getMonth()!==month-1||dt.getDate()!==day)throw new Error('Selecciona una fecha válida.');
   if(!Object.prototype.hasOwnProperty.call(SPORTS,sport))throw new Error('Deporte no válido.');
   if(intensity_target.length>180||coach_notes.length>3000)throw new Error('Reduce la longitud de las indicaciones.');
-  return {title,duration_minutes:duration,scheduled_date,sport,intensity_target:intensity_target||null,coach_notes:coach_notes||null};
+  const hasSteps=Object.prototype.hasOwnProperty.call(values,'steps');
+  const steps=hasSteps ? validateSteps(values.steps) : undefined;
+  const total=steps ? Math.ceil(stepsTotalSeconds(steps)/60) : duration;
+  const result={title,duration_minutes:total,scheduled_date,sport,intensity_target:intensity_target||null,coach_notes:coach_notes||null};
+  if(hasSteps)result.steps=steps;
+  return result;
 }
 
 function node(tag,cls,text) {
@@ -103,7 +110,7 @@ export async function mountPlanner({root,client,user,role}) {
     try {
       const [start,end]=range();
       const result=await client.from('planned_workouts')
-        .select('id,coach_id,athlete_id,scheduled_date,sport,title,duration_minutes,intensity_target,coach_notes,status')
+        .select('id,coach_id,athlete_id,scheduled_date,sport,title,duration_minutes,intensity_target,coach_notes,status,steps')
         .eq(role==='coach'?'coach_id':'athlete_id',user.id)
         .gte('scheduled_date',start).lt('scheduled_date',end)
         .order('scheduled_date',{ascending:true});
@@ -167,6 +174,12 @@ export async function mountPlanner({root,client,user,role}) {
       card.append(node('p','', (SPORTS[w.sport]||'Deporte')+' · '+w.duration_minutes+' min'+(name?' · '+name:'')));
       if(w.intensity_target)card.append(node('p','','Objetivo: '+w.intensity_target));
       if(w.coach_notes)card.append(node('p','','Indicaciones: '+w.coach_notes));
+      if(Array.isArray(w.steps) && w.steps.length){
+        const blocks=node('div','ap-workout-blocks');
+        blocks.append(node('strong','','Bloques de la sesión'));
+        for(const step of w.steps)blocks.append(node('p','',describeStep(step)));
+        card.append(blocks);
+      }
       if(role==='coach'){
         const actions=node('div','ap-workout-actions');
         actions.append(
@@ -257,14 +270,24 @@ export async function mountPlanner({root,client,user,role}) {
     const notes=node('textarea','ap-input');notes.name='coach_notes';notes.maxLength=3000;notes.rows=3;notes.placeholder='Indicaciones del entrenador…';notes.value=current?.coach_notes||'';
     const save=node('button','ap-save',current?'Guardar cambios':'Guardar entrenamiento');save.type='submit';
     const status=node('p','ap-status');status.setAttribute('role','status');
-    form.append(labelled('Deportista',athlete),labelled('Fecha',date),labelled('Título',name),labelled('Duración (minutos)',duration),labelled('Deporte',sport),labelled('Objetivo',target),labelled('Indicaciones',notes),save,status);
+    const stepsEditor=createStepsEditor(form.ownerDocument,current?.steps||[],({count,seconds})=>{
+      if(count){
+        duration.value=String(Math.ceil(seconds/60));
+        duration.readOnly=true;
+        duration.title='Se calcula a partir de los bloques';
+      }else{
+        duration.readOnly=false;
+        duration.title='';
+      }
+    });
+    form.append(labelled('Deportista',athlete),labelled('Fecha',date),labelled('Título',name),labelled('Duración (minutos)',duration),labelled('Deporte',sport),labelled('Objetivo',target),labelled('Indicaciones',notes),stepsEditor.element,save,status);
     if(current)form.append(button('Cancelar edición','ap-action',()=>{editingId=null;paint();}));
     form.addEventListener('submit',async event=>{
       event.preventDefault();
       if(busy)return;
       busy=true;save.disabled=true;status.textContent='Guardando…';
       try{
-        const payload=validateWorkout({title:name.value,scheduled_date:date.value,duration_minutes:duration.value,sport:sport.value,intensity_target:target.value,coach_notes:notes.value});
+        const payload=validateWorkout({title:name.value,scheduled_date:date.value,duration_minutes:duration.value,sport:sport.value,intensity_target:target.value,coach_notes:notes.value,steps:stepsEditor.getSteps()});
         if(current){
           await updatePlannedWorkout(client,user.id,current.id,payload);
         }else{

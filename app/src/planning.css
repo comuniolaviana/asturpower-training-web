@@ -38,3 +38,18 @@
 .ap-delete-confirm{border:1px solid #deb7af;border-radius:10px;margin-top:12px;padding:12px;background:#fff9f6;}
 .ap-delete-confirm p{color:#65372f;margin:0 0 10px;}
 .ap-delete-confirm .ap-action{margin-right:8px;margin-bottom:5px;}
+
+.ap-workout-blocks{margin-top:10px;border-top:1px solid #cfdec7;padding:10px 0 2px;}
+.ap-workout-blocks>strong{font-size:.88rem;color:#244d35;}
+.ap-workout-blocks p{margin:4px 0;font-size:.88rem;overflow-wrap:anywhere;}
+.ap-steps-editor{margin-top:10px;}
+.ap-steps-editor>.ap-muted{font-size:.87rem;}
+.ap-steps-list{display:grid;gap:10px;}
+.ap-step-row{background:#fff;border:1px solid #cfdfd0;border-radius:10px;padding:13px;}
+.ap-step-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;}
+.ap-step-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;}
+.ap-step-fields .ap-input{width:100%;min-width:0;}
+.ap-step-order{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;}
+.ap-steps-actions{margin-top:12px;}
+.ap-step-total{margin:12px 0 0;color:#34543d;font-size:.86rem;font-weight:600;}
+@media(max-width:520px){.ap-step-fields{grid-template-columns:minmax(0,1fr)}}
