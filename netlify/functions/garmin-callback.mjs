@@ -1,3 +1,5 @@
+import { createGarminCallbackHandler } from '../lib/garmin-oauth-service.mjs';
+const actualGarminCallback = createGarminCallbackHandler();
 // Punto de retorno reservado para Garmin Connect OAuth2 PKCE.
 // Hasta activar el flujo completo en el servidor, NO procesa códigos ni tokens.
 // No registrar en logs request.url o parámetros OAuth.
@@ -11,6 +13,7 @@ const headers = {
 };
 
 export default async function handler(request) {
+  if (process.env.ASTURPOWER_GARMIN_ENABLED === 'true') return actualGarminCallback(request);
   if (request.method !== 'GET') {
     return new Response('Método no permitido', {
       status: 405,
