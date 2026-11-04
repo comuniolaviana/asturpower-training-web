@@ -1,4 +1,4 @@
--- Read-only catalog checks before FIRST application of 20261104105956_garmin_sync.sql.
+-- Read-only catalog checks before FIRST application of 20261104115935_garmin_sync.sql.
 -- No records, tokens, credentials, DDL or fixture writes. Run only on AsturPower.
 WITH expected_columns(table_name,column_name,type_name) AS (VALUES
   ('garmin_connections','athlete_id','uuid'),('garmin_connections','garmin_user_id','text'),

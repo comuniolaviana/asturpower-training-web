@@ -2,7 +2,20 @@
 
 Revisión: **4 de noviembre de 2026**. Trabajo sobre `desarrollo`, partiendo de `f56f5a2`. La landing y `main` quedan fuera de este cambio.
 
-## Continuación tras `0775990`
+## Migración aplicada con autorización
+
+El **4 de noviembre de 2026**, después de la autorización explícita del usuario, se ha aplicado la migración únicamente en el proyecto AsturPower `drnefgxdrultneeodtsy`, mediante la conexión `asturpower.training`.
+
+- Supabase confirma éxito y registra **`20261104115935`, `garmin_sync`** en su historial. El archivo se ha renombrado a `supabase/migrations/20261104115935_garmin_sync.sql` para coincidir con la versión que asignó el servicio y evitar que el CLI lo considere una migración diferente pendiente. **Su SQL no cambia** respecto al archivo aprobado en `623cba5` (blob `660ed9f7255f01e73816b2613f96cf7d98d05b2a`), que entonces se llamaba `20261104105956_garmin_sync.sql`. No se ha modificado manualmente el historial remoto.
+- Verificación alojada por lectura: **cinco tablas con RLS y sin permisos para `anon`/`authenticated`**, seis funciones SECURITY INVOKER con `search_path` explícito y ejecución solo del servidor, secuencia privada y tres columnas nuevas con los tipos esperados.
+- El calendario conserva SELECT/INSERT/UPDATE/DELETE para el rol autenticado bajo sus políticas anteriores; TRUNCATE/REFERENCES/TRIGGER ya están retirados.
+- Recuentos antes y después: perfiles 3, roles 3, relaciones 2, sesiones planificadas 1, actividades 0, conexiones Garmin 0 y estados OAuth 0. Las cinco tablas nuevas están vacías. No se han creado cuentas definitivas ni alterado registros existentes.
+- Se han vuelto a consultar los asesores: los siete avisos informativos [RLS sin políticas](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy) corresponden al almacenamiento exclusivo del servidor. Sigue el aviso previo de [protección contra contraseñas filtradas](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection); no se ha cambiado el plan gratuito ni configurado Auth.
+- La prueba funcional alojada de `database/tests/garmin-sync.sql`, con fixtures y ROLLBACK, **no se ejecutó**: su confirmación independiente caducó dos veces. No se ha usado una ruta alternativa para eludirla. Se ha comprobado después que no hay fixtures persistidos. Las 32 comprobaciones funcionales SQL siguen siendo **locales**; la verificación alojada de esta entrega cubre esquema, historial y permisos efectivos por lectura de catálogos.
+
+La primera confirmación de la migración también caducó; una nueva solicitud por el mismo procedimiento sí terminó correctamente. No se ha repetido la aplicación después del éxito. Garmin no se ha habilitado, no hay despliegue nuevo y no se han cambiado las URLs registradas, los planes o la web pública.
+
+## Revisión previa tras `0775990` (antes de aplicar)
 
 Se ha vuelto a leer la rama, el esquema alojado y el portal oficial. AsturPower Training sigue **Approved** con Activity API, Training API, OAuth 2.0 y el mismo retorno registrado. No hay conexiones Garmin autorizadas individualmente en Supabase.
 
@@ -14,7 +27,7 @@ Se ha vuelto a leer la rama, el esquema alojado y el portal oficial. AsturPower 
 - **Accesos pendientes:** API Tools continúa pidiendo la sesión específica de la aplicación; Cloudflare muestra inicio de sesión y no hay una conexión de despliegue disponible. No se han solicitado contraseñas, abierto nuevas cuentas ni copiado secretos entre proveedores. Que el portal Developer esté autenticado no autentica API Tools.
 - **Seguridad alojada:** los avisos informativos de RLS sin políticas sobre las dos tablas OAuth son intencionados: solo el servidor debe acceder. Supabase también avisa de protección contra contraseñas filtradas desactivada; su documentación la limita a Pro o superior. No se ha contratado ni activado un plan de pago. Los índices informados como no usados no se eliminan; los dos índices de claves externas recomendados quedan como mejora de rendimiento, sin bloquear esta migración.
 
-No se ha creado una nueva web accesible: `asturpower-training-dev.netlify.app` sigue requiriendo la sesión del equipo y sirviendo la versión anterior. La siguiente intervención necesaria es autorizar la migración preparada exclusivamente en AsturPower; no equivale a autorizar producción, abrir el sitio, cambiar URLs o vincular una cuenta personal de Garmin.
+No se ha creado una nueva web accesible: `asturpower-training-dev.netlify.app` sigue requiriendo la sesión del equipo y sirviendo la versión anterior. La autorización posterior cubrió exclusivamente la migración en AsturPower; no equivale a autorizar producción, abrir el sitio, cambiar URLs o vincular una cuenta personal de Garmin.
 
 ## Estado comprobado, separado de la simulación
 
@@ -27,9 +40,9 @@ No se ha creado una nueva web accesible: `asturpower-training-dev.netlify.app` s
 | Notificaciones | API Tools solicita su propia sesión con las credenciales de la aplicación. No se han podido verificar los endpoints habilitados ni realizar cambios allí. |
 | Netlify | El equipo AsturPower Training está en **Free**. Existen el sitio original y `asturpower-training-dev`; este último exige acceso del equipo para **todos** los despliegues. |
 | Versión desplegada al revisar | El despliegue de desarrollo estaba `ready`, pero correspondía a `b103a233`, anterior al último código de la rama. La existencia de una variable en el panel no demuestra su valor en un despliegue anterior: se fijan al desplegar. |
-| Base de datos | Se han inspeccionado tablas, políticas, índices y privilegios del proyecto exclusivo de AsturPower. La nueva migración **no se ha aplicado**: dos solicitudes de prueba SQL transaccional remota caducaron sin confirmación. No se ha intentado saltar esa confirmación. |
+| Base de datos | Migración **aplicada** con autorización; versión alojada `20261104115935`. Esquema y privilegios comprobados por lectura. Pruebas funcionales con fixtures solo ejecutadas localmente; las solicitudes de prueba alojada caducaron sin confirmación. |
 
-El código se guarda con la marca `[skip netlify]` mientras la migración alojada esté pendiente. Esto permite revisar y ejecutar las pruebas en GitHub sin reemplazar la versión actualmente servida ni iniciar otro despliegue en la cuota compartida del equipo. No se han creado ni habilitado nuevas credenciales o cuentas reales.
+El código se guarda con la marca `[skip netlify]` mientras el despliegue alojado esté pendiente de revisión. Esto permite revisar y ejecutar las pruebas en GitHub sin reemplazar la versión actualmente servida ni iniciar otro despliegue en la cuota compartida del equipo. No se han creado ni habilitado nuevas credenciales o cuentas reales.
 
 ## Implementado en el código
 
@@ -75,11 +88,11 @@ FIT, trazados GPS, análisis de muestras, importación de todo el histórico, bo
 
 ## Migración preparada y privilegios
 
-`supabase/migrations/20261104105956_garmin_sync.sql` añade registros privados de exportación, cola cifrada, cursor, bloqueos, orden de importación y reservas de cuota, además de metadatos de consentimiento. Las tablas nuevas tienen RLS y carecen de acceso para `anon` y `authenticated`.
+`supabase/migrations/20261104115935_garmin_sync.sql` añade registros privados de exportación, cola cifrada, cursor, bloqueos, orden de importación y reservas de cuota, además de metadatos de consentimiento. Las tablas nuevas tienen RLS y carecen de acceso para `anon` y `authenticated`.
 
 Las funciones SQL son **SECURITY INVOKER**, con `search_path` explícito y EXECUTE reservado a `service_role`. No se añaden funciones SECURITY DEFINER para saltarse RLS.
 
-La revisión detectó que `authenticated` tenía TRUNCATE, REFERENCES y TRIGGER sobre el calendario. La migración revoca esos privilegios innecesarios y conserva el CRUD autorizado. Las pruebas SQL comprueban insertar, editar y borrar una sesión con el entrenador correcto después de la revocación. Esta corrección está **preparada y probada localmente; no aplicada todavía en Supabase**.
+La revisión detectó que `authenticated` tenía TRUNCATE, REFERENCES y TRIGGER sobre el calendario. La migración revoca esos privilegios innecesarios y conserva el CRUD autorizado. Las pruebas SQL locales comprueban insertar, editar y borrar una sesión con el entrenador correcto después de la revocación. Esta corrección ya está **aplicada**, con privilegios efectivos comprobados en Supabase; el CRUD bajo identidades ficticias sigue pendiente de prueba funcional alojada.
 
 La migración es incremental para el esquema actual de AsturPower, no un instalador para una base vacía. No debe ejecutarse en Comunio ni en Vehículos Empresa.
 
@@ -115,7 +128,7 @@ npm run test:garmin:cloudflare
 
 ## Lo que falta para una primera prueba real
 
-1. Completar la confirmación de ejecución remota y aplicar la migración revisada solo en el proyecto AsturPower. Después comprobar asesores, privilegios y pruebas transaccionales alojadas. No usar otra ruta para eludir esa confirmación.
+1. La migración ya está aplicada y sus asesores/privilegios revisados. Queda completar la prueba funcional alojada con fixtures y ROLLBACK cuando se confirme su ejecución; no volver a aplicar la migración ni eludir esa confirmación.
 2. Desplegar la versión revisada en el sitio de desarrollo y comprobar su commit, funciones y cabeceras. Guardar código en GitHub no prueba que Netlify haya desplegado ese commit.
 3. Elegir y verificar un receptor HTTPS accesible para Garmin: ruta pública protegida a nivel de aplicación/origen en Netlify o el Worker alternativo. Revisar las consecuencias de acceso y cuotas antes de cambiar la protección del sitio. No abrir la web original para resolverlo.
 4. Consultar API Tools con su sesión específica, comprobar los endpoints que ya haya y configurar únicamente los que falten. **No cambiar el retorno OAuth registrado** para resolver el webhook.
