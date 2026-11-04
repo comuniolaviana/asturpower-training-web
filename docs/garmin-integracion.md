@@ -147,3 +147,16 @@ Antes de uso real generalizado quedan la revisión de privacidad/consentimiento,
 - Cloudflare Node crypto: https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/
 - Pruebas locales Cloudflare: https://developers.cloudflare.com/workers/testing/miniflare/
 - Seguridad Supabase: https://supabase.com/docs/guides/database/postgres/row-level-security y https://supabase.com/docs/guides/auth/password-security
+
+
+## Continuación del despliegue Cloudflare — 4 de noviembre de 2026
+
+- Netlify rechazó el intento del commit `a96f6f4` por créditos agotados; no se solicita otro despliegue allí.
+- La aprobación móvil de Wrangler terminó correctamente en Cloudflare, pero Work no pudo recibir la sesión porque la política de red bloqueó el acceso a `dash.cloudflare.com`. La CLI siguió sin autenticación. No se repite la autorización ni se extraen tokens.
+- Se ha vinculado Cloudflare con el repositorio de AsturPower mediante su integración oficial con GitHub. El usuario confirmó haber guardado `desarrollo` como rama de despliegue del Worker independiente `asturpower-garmin-dev`.
+- El primer intento `4bf348ac` seleccionó `main` y se detuvo en la comprobación de rama, antes de ejecutar el comando de despliegue. La comprobación se conserva: `test "$WORKERS_CI_BRANCH" = "desarrollo"`.
+- El comando acordado es `npx wrangler deploy --config wrangler.garmin.toml`. Este registro inicia un único intento desde `desarrollo`; no certifica que Cloudflare lo haya publicado. Se debe verificar el resultado y la URL real antes de marcarlo como desplegado.
+- El receptor sigue cerrado con `ASTURPOWER_GARMIN_ACTIVITY_ENABLED=false`, sin secretos ni cron configurados. No se modifica el retorno OAuth registrado en Garmin, la web principal ni `main`.
+- Este Worker solo implementa salud y recepción de eventos. Aún no aloja el acceso de deportistas ni OAuth, por lo que publicarlo no basta para pulsar «Conectar Garmin».
+- Se dejó preparada en Supabase una sesión de ciclismo de 16 minutos con dos intervalos de potencia, pendiente de autorización individual y envío; no se han copiado identificadores de personas a este documento.
+- Estado real: ninguna cuenta Garmin conectada ni entrenamiento enviado ni actividad oficial importada en la última comprobación. Las pruebas de código existentes siguen siendo locales/simuladas; la CI del commit `a96f6f4` terminó correctamente.
