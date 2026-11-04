@@ -1,4 +1,5 @@
 // Garmin Connect: interfaz del deportista. Los secretos se gestionan exclusivamente en Netlify Functions.
+import { loadGarminActivities } from './garmin-api.js';
 const el=(tag,cls,content)=>{
   const node=document.createElement(tag);
   if(cls)node.className=cls;
@@ -11,13 +12,14 @@ function note(parent,message){
   parent.append(status);
   return status;
 }
-async function request(client,path,method='GET'){
+async function request(client,path,method='GET',payload){
   const session=await client.auth.getSession();
   const token=session.data?.session?.access_token;
   if(!token)throw new Error('Inicia sesión de nuevo para conectar Garmin.');
   const response=await fetch('/.netlify/functions/'+path,{
     method,cache:'no-store',credentials:'same-origin',
-    headers:{Authorization:'Bearer '+token},
+    headers:{Authorization:'Bearer '+token,...(payload?{'Content-Type':'application/json'}:{})},
+    ...(payload?{body:JSON.stringify(payload)}:{}),
   });
   let body=null;
   try{body=await response.json();}catch{}
@@ -49,7 +51,7 @@ export async function mountGarminPanel({root,client,user,role}){
   catch(error){if(root.isConnected)status.textContent=error.message;return;}
   if(!root.isConnected)return;
   if(!result.configured){
-    status.textContent='Garmin está aprobado para AsturPower, pero todavía faltan configurar las credenciales del servidor y la dirección de retorno.';
+    status.textContent='La conexión Garmin todavía no está disponible en este entorno. Su configuración debe comprobarse en el servidor.';
     return;
   }
   if(result.connected){
@@ -59,7 +61,12 @@ export async function mountGarminPanel({root,client,user,role}){
     wrap.append(perms);
     if(!p.includes('WORKOUT_IMPORT'))wrap.append(el('p','garmin-warning','No se ha concedido permiso para recibir entrenamientos en Garmin.'));
     if(!p.includes('ACTIVITY_EXPORT'))wrap.append(el('p','garmin-warning','No se ha concedido permiso para compartir actividades.'));
-    wrap.append(el('p','garmin-warning','La cuenta está vinculada, pero el envío y la recepción automáticos siguen pendientes de pruebas.'));
+    wrap.append(el('p','garmin-warning',result.training_enabled
+      ?'Puedes enviar tus sesiones estructuradas desde el calendario. La llegada al dispositivo requiere sincronizarlo con Garmin Connect.'
+      :'El envío de entrenamientos está preparado y pendiente de activación y prueba real.'));
+    wrap.append(el('p','garmin-warning',result.activity_enabled
+      ?'Las actividades se mostrarán cuando Garmin entregue una notificación autorizada.'
+      :'La recepción automática está preparada y pendiente de configurar las notificaciones oficiales.'));
     const disconnect=el('button','button','Desconectar Garmin');
     disconnect.type='button';
     disconnect.addEventListener('click',async()=>{
@@ -76,6 +83,22 @@ export async function mountGarminPanel({root,client,user,role}){
       }
     });
     wrap.append(disconnect);
+    const recent=el('section','garmin-recent');
+    recent.append(el('h3','','Actividades sincronizadas'));
+    wrap.append(recent);
+    try{
+      const activities=await loadGarminActivities(client,user.id);
+      if(!root.isConnected)return;
+      if(!activities.length)recent.append(el('p','','Todavía no se han recibido actividades de Garmin.'));
+      for(const activity of activities){
+        const item=el('article','garmin-activity');
+        item.append(el('strong','',activity.title));
+        const date=new Date(activity.started_at);
+        item.append(el('p','',date.toLocaleDateString('es-ES')+' · '+Math.round(activity.duration_seconds/60)+' min'
+          +(activity.distance_meters!==null?' · '+(activity.distance_meters/1000).toLocaleString('es-ES',{maximumFractionDigits:2})+' km':'')));
+        recent.append(item);
+      }
+    }catch{if(root.isConnected)recent.append(el('p','','Las actividades sincronizadas no se pueden consultar ahora.'));}
     return;
   }
   status.textContent='Conexión disponible: debes autorizar personalmente qué datos compartes con AsturPower.';
@@ -94,7 +117,7 @@ export async function mountGarminPanel({root,client,user,role}){
     start.disabled=true;
     status.textContent='Abriendo la autorización oficial de Garmin…';
     try{
-      const body=await request(client,'garmin-start','POST');
+      const body=await request(client,'garmin-start','POST',{consent:true});
       const url=new URL(body.authorization_url);
       if(url.protocol!=='https:'||url.origin!=='https://connect.garmin.com'||url.pathname!=='/oauth2Confirm')
         throw new Error('La dirección de autorización Garmin no es válida.');
@@ -106,3 +129,4 @@ export async function mountGarminPanel({root,client,user,role}){
   });
   wrap.append(consent,start);
 }
+

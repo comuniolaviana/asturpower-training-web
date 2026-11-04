@@ -1,8 +1,6 @@
 import { requestTeam } from './team-api.js';
 import { mountPlanner } from './planning.js';
 import { mountGarminPanel } from './garmin-connect.js';
-import './garmin-connect.css';
-import './planning.css';
 import { renderTeamManagement } from './team-ui.js';
 import { loadDashboard, saveProfile, messageFor, ROLE_LABELS, STATUS_LABELS } from './data.js';
 
@@ -251,3 +249,4 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
 function initials(name) {
   return name.trim().split(/\s+/).slice(0, 2).map(part => [...part][0] || '').join('').toLocaleUpperCase('es');
 }
+

@@ -5,3 +5,8 @@ dist-app/
 !.env.example
 .netlify/
 coverage/
+.wrangler/
+.dev.vars
+.dev.vars.*
+supabase/.temp/
+

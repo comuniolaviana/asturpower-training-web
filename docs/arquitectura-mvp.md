@@ -1,13 +1,13 @@
 # AsturPower Training — Arquitectura inicial y plan MVP
 
-**Versión:** 0.2 — 2 de noviembre de 2026  
-**Estado:** arquitectura del MVP en ejecución. La base inicial de Supabase está creada y probada. El acceso, el panel y el servidor básico de roles/vínculos están preparados en `desarrollo`, sin desplegar ni probar con cuentas reales. La identidad admite varios roles y las carteras están aisladas por vínculos autorizados. La integración Garmin no está activada. Véanse `docs/paso1-usuarios-permisos.md`, `docs/paso2-acceso-panel.md` y `docs/paso3-varios-entrenadores.md`.
+**Versión:** 0.3 — 4 de noviembre de 2026
+**Estado actualizado:** la app de pruebas y las tablas deportivas ya existen. Garmin ha aprobado la aplicación con Activity API y Training API, y hay un retorno OAuth registrado. El código de sincronización está implementado y probado con datos simulados; la nueva migración y la entrega real siguen pendientes de validación/activación. El informe vigente es `docs/garmin-integracion.md`; las secciones históricas de planificación que siguen no sustituyen esa revisión.
 
 ## 1. Objetivo
 
 Construir una plataforma sencilla y segura para varios entrenadores independientes, cada uno con su cartera autorizada. El piloto inicial tendrá un entrenador y dos ciclistas reales: Mauro y Enol. Debe permitir que cada persona inicie sesión, que el entrenador asigne entrenamientos y que el deportista vea sus sesiones. Más adelante se conectarán Activity API y Training API oficiales de Garmin.
 
-**Estado actual comprobado:** la página informativa y la política de privacidad se encuentran en este repositorio y están publicadas en Netlify. Garmin Developer permite preparar un registro de aplicación, pero según el informe de revisión del portal facilitado el 2 de noviembre **todavía no hay una aplicación Garmin registrada ni credenciales activas**.
+**Estado actual comprobado:** el 4 de noviembre se ha visto en el portal la aplicación AsturPower Training en estado Approved, con Activity API, Training API y OAuth 2.0. La cuenta de cada deportista debe autorizarse por separado; se han observado cero conexiones Garmin almacenadas. Véase `docs/garmin-integracion.md` para distinguir código preparado, configuración y pruebas reales pendientes.
 
 ## 2. Arquitectura recomendada, provisional
 
@@ -116,9 +116,9 @@ Las APIs Garmin **no han sido probadas** con una aplicación de AsturPower todav
 
 ## 9. Próxima acción concreta
 
-**Próxima acción:** preparar un despliegue de pruebas separado, revisar Auth y autorizar la primera cuenta. La organización Supabase independiente ya está en Free y las tres tablas iniciales están probadas con múltiples entrenadores. El panel de `desarrollo` permite acceso, perfil propio y cambio de espacio entre roles concedidos. El servidor básico de roles y vínculos con consentimiento está preparado pero desactivado; el envío de invitaciones sigue pendiente. Después se abordarán planificación, rutas y alta Garmin.
+Completar la confirmación para aplicar la migración Garmin ya probada localmente, verificar el despliegue de `desarrollo` y resolver el acceso servidor a servidor del receptor sin cambiar el retorno registrado ni la landing. Después configurar las notificaciones en API Tools y realizar una autorización personal y una prueba de dispositivo. La ejecución remota de la nueva migración no se ha completado.
 
-No introducir datos de salud reales ni secretos en el repositorio público. No sustituir la página pública existente hasta contar con pruebas y copia de seguridad.
+Los diseños anteriores de entidades, URLs e hitos se conservan como contexto histórico; las rutas y estados operativos vigentes están en `docs/garmin-integracion.md`.
 
 ## Referencias generales
 
@@ -130,4 +130,5 @@ No introducir datos de salud reales ni secretos en el repositorio público. No s
 - Netlify Functions, secretos y variables: https://docs.netlify.com/build/functions/environment-variables/
 
 **Nota:** las especificaciones más detalladas de OAuth, webhook, límites y formato de datos deben comprobarse en la documentación habilitada para la aplicación Garmin antes de escribir la integración.  
+
 

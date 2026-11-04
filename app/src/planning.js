@@ -2,6 +2,7 @@
 /* Calendario MVP; la autorización definitiva la aplica Supabase RLS. */
 import { validateSteps, stepsTotalSeconds, describeStep } from './structured-steps.js';
 import { createStepsEditor } from './structured-steps-ui.js';
+import { publishWorkoutToGarmin } from './garmin-api.js';
 const SPORTS = { cycling: 'Ciclismo', running: 'Carrera', swimming: 'Natación', strength: 'Fuerza', other: 'Otro' };
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
@@ -179,6 +180,16 @@ export async function mountPlanner({root,client,user,role}) {
         blocks.append(node('strong','','Bloques de la sesión'));
         for(const step of w.steps)blocks.append(node('p','',describeStep(step)));
         card.append(blocks);
+        if(w.status==='planned'){
+          const delivery=node('p','ap-status');delivery.setAttribute('role','status');
+          const send=button('Enviar a Garmin','ap-action',async()=>{
+            send.disabled=true;delivery.textContent='Comprobando permisos y enviando…';
+            try{delivery.textContent=await publishWorkoutToGarmin(client,w.id);}
+            catch(error){delivery.textContent=error.message;}
+            finally{send.disabled=false;}
+          });
+          card.append(send,delivery);
+        }
       }
       if(role==='coach'){
         const actions=node('div','ap-workout-actions');
@@ -312,3 +323,4 @@ export async function mountPlanner({root,client,user,role}) {
 
   await load();
 }
+

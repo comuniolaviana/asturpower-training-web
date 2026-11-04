@@ -23,3 +23,6 @@ jobs:
         run: npm test
       - name: Comprobar compilación
         run: npm run build
+      - name: Comprobar SQL Garmin con PostgreSQL local y datos ficticios
+        run: npm run test:database:garmin
+

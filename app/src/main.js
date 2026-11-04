@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { mountApp, showUnavailable } from './ui.js';
 import './style.css';
+import './garmin-connect.css';
+import './planning.css';
 
 const root = document.querySelector('#app');
 try {
@@ -20,3 +22,4 @@ try {
   });
   mountApp(root, client);
 } catch { showUnavailable(root); }
+

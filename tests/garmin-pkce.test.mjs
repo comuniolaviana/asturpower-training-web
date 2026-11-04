@@ -67,7 +67,7 @@ test('Garmin OAuth completo simulado: autorización, canje, permisos y vinculaci
                   filters.every(([k,v])=>k==='expires_at'?pending[k]>v:v===null?pending[k]==null:pending[k]===v);
                 if(!eligible)return {data:null,error:null};
                 spent=true;
-                return {data:{athlete_id:athleteId,verifier_ciphertext:pending.verifier_ciphertext,redirect_uri:pending.redirect_uri},error:null};
+                return {data:{athlete_id:athleteId,verifier_ciphertext:pending.verifier_ciphertext,redirect_uri:pending.redirect_uri,consent_version:pending.consent_version},error:null};
               }
             };
           }
@@ -84,7 +84,7 @@ test('Garmin OAuth completo simulado: autorización, canje, permisos y vinculaci
   const verify=async()=>({id:athleteId,roles:['athlete']});
   const start=createGarminStartHandler({env,verify,createClientFn:makeClient});
   const startResponse=await start(new Request('https://asturpower-training-dev.netlify.app/.netlify/functions/garmin-start',{
-    method:'POST',headers:{Authorization:'Bearer token-de-prueba-seguro'}
+    method:'POST',headers:{Authorization:'Bearer token-de-prueba-seguro','Content-Type':'application/json'},body:JSON.stringify({consent:true})
   }));
   assert.equal(startResponse.status,200);
   const started=await startResponse.json();
@@ -122,3 +122,4 @@ test('Garmin OAuth completo simulado: autorización, canje, permisos y vinculaci
   assert.equal(new URL(repeat.headers.get('Location')).searchParams.get('garmin'),'expired');
   assert.equal(garminCalls.length,3);
 });
+
