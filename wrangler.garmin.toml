@@ -1,11 +1,30 @@
+# Isolated AsturPower staging app. All private modules remain disabled.
 name = "asturpower-garmin-dev"
-main = "cloudflare/garmin-worker.mjs"
+main = "cloudflare/garmin-app-worker.mjs"
 compatibility_date = "2026-11-04"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
+[build]
+command = "npm run build:garmin:cloudflare:app"
+
+[assets]
+directory = "./.wrangler/garmin-app-assets"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+not_found_handling = "none"
+
 [vars]
+SUPABASE_URL = "https://drnefgxdrultneeodtsy.supabase.co"
+GARMIN_REDIRECT_URI = "https://asturpower-garmin-dev.asturpower-training.workers.dev/.netlify/functions/garmin-callback"
+ASTURPOWER_APP_ENABLED = "false"
+ASTURPOWER_TEAM_ENABLED = "false"
+ASTURPOWER_GARMIN_ENABLED = "false"
+ASTURPOWER_GARMIN_TRAINING_ENABLED = "false"
 ASTURPOWER_GARMIN_ACTIVITY_ENABLED = "false"
-# No account, domain, secret, paid resource or scheduled trigger is created here.
-# After review: bind the SAME AsturPower Supabase project and existing encryption
-# key through server secrets. Add a cron trigger only when delivery is enabled.
+
+[observability]
+enabled = false
+# No secret values, paid binding, cron or custom domain.
+# OAuth URL change explicitly authorized by the user; activation remains separate.
