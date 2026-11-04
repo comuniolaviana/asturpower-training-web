@@ -30,3 +30,7 @@ jobs:
           WRANGLER_SEND_METRICS: 'false'
         run: npm run test:garmin:cloudflare
 
+      - name: Comprobar adaptador app Garmin opcional con workerd y activos Vite
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: npm run test:garmin:cloudflare:app

@@ -160,3 +160,30 @@ Antes de uso real generalizado quedan la revisión de privacidad/consentimiento,
 - Este Worker solo implementa salud y recepción de eventos. Aún no aloja el acceso de deportistas ni OAuth, por lo que publicarlo no basta para pulsar «Conectar Garmin».
 - Se dejó preparada en Supabase una sesión de ciclismo de 16 minutos con dos intervalos de potencia, pendiente de autorización individual y envío; no se han copiado identificadores de personas a este documento.
 - Estado real: ninguna cuenta Garmin conectada ni entrenamiento enviado ni actividad oficial importada en la última comprobación. Las pruebas de código existentes siguen siendo locales/simuladas; la CI del commit `a96f6f4` terminó correctamente.
+
+## Receptor público verificado y adaptador de aplicación opcional
+
+Cloudflare confirmó el despliegue del commit `2b3150f` desde `desarrollo`, versión `7469b7d8-9e20-4956-9de1-e4a906800f3f`. Se comprobó por HTTP real:
+
+- `https://asturpower-garmin-dev.asturpower-training.workers.dev/health`: **200**, `{"service":"asturpower-garmin-receiver","enabled":false}`.
+- POST con cuerpo vacío a `/garmin/activities`: **503**, `garmin_activity_not_enabled`. No se usaron actividades ni datos de salud.
+
+Eso certifica HTTPS y publicación del receptor desactivado, no OAuth, envío ni recepción de datos Garmin reales.
+
+`cloudflare/garmin-app-worker.mjs` y `wrangler.garmin-app.toml` preparan la aplicación existente y sus endpoints en el mismo Worker. Esta configuración es **opcional y todavía NO está seleccionada ni desplegada**: la integración Git sigue utilizando `wrangler.garmin.toml`, receptor solamente.
+
+El adaptador reutiliza los manejadores de equipo, OAuth y Training, pasando bindings explícitos por petición, sin copiar secretos a `process.env`. Solo admite el Supabase exclusivo de AsturPower y el hostname de pruebas verificado. Conserva autenticación, roles, vínculos autorizados y rechazo de peticiones de otro origen. El procesador no tiene ruta pública. El frontend se compila a archivos estáticos sin configuración privada; se excluyen las reglas Netlify y el Worker añade cabeceras de seguridad, CSP limitada a ese Supabase, no-store y noindex.
+
+Los manejadores OAuth mantienen Netlify como origen predeterminado. Únicamente el adaptador Cloudflare selecciona su origen fijo; no deriva retornos desde Host, query, Origin o cabeceras reenviadas. El callback elimina los parámetros y vuelve al origen del adaptador. Los estados de OAuth conservan su callback exacto y no se reutilizan entre proveedores.
+
+Verificación local actual: **118 pruebas Node superadas**, compilación Vite y del Worker correctas, receptor anterior superando sus 7 escenarios en workerd, y adaptador opcional superando **10 escenarios con workerd y los activos Vite reales**, con cero peticiones externas. El flujo OAuth completo se ha simulado en ambos orígenes; no equivale al consentimiento Garmin de un deportista. CI incorpora la prueba del nuevo adaptador.
+
+Para comprobarlo sin publicar:
+
+```sh
+WRANGLER_SEND_METRICS=false npm run test:garmin:cloudflare:app
+```
+
+Para seleccionar posteriormente la aplicación completa, habrá que cambiar el build del Worker a `test "$WORKERS_CI_BRANCH" = "desarrollo" && npm run build:garmin:cloudflare:app` y el deploy a `npx wrangler deploy --config wrangler.garmin-app.toml`. Todas sus activaciones están en false: publicar esa configuración por sí sola no habilita cuentas ni Garmin. No se han ejecutado esos cambios de configuración.
+
+Bloqueos de la prueba real: configurar en Cloudflare los valores privados existentes por un canal seguro; activar los módulos después de verificar permisos y privacidad; y **obtener autorización explícita antes de sustituir o añadir en Garmin** `https://asturpower-garmin-dev.asturpower-training.workers.dev/.netlify/functions/garmin-callback`. Ese cambio trasladaría el destino de futuras autorizaciones desde el entorno Netlify bloqueado; los estados pendientes del retorno antiguo no sirven para el nuevo. La dirección registrada sigue siendo la de Netlify. No se han creado credenciales ni cambiado permisos o URLs en Garmin. No hay una cuenta Garmin conectada por esta entrega.

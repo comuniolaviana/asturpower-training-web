@@ -36,7 +36,8 @@ test('unconfigured callback never exposes OAuth code',async()=>{
   assert.doesNotMatch(response.headers.get('location'),/should_not_echo/);
 });
 
-test('Garmin OAuth completo simulado: autorización, canje, permisos y vinculación cifrada',async()=>{
+for (const redirectOrigin of ['https://asturpower-training-dev.netlify.app','https://asturpower-garmin-dev.asturpower-training.workers.dev'])
+test(`Garmin OAuth completo simulado en ${new URL(redirectOrigin).hostname}: PKCE, canje y cifrado`,async()=>{
   const now=Date.now();
   const env={
     ASTURPOWER_APP_ENABLED:'true',ASTURPOWER_GARMIN_ENABLED:'true',
@@ -45,7 +46,7 @@ test('Garmin OAuth completo simulado: autorización, canje, permisos y vinculaci
     SUPABASE_SECRET_KEY:'sb_secret_abcdefghijklmnopqrst',
     GARMIN_CLIENT_ID:'123e4567-e89b-42d3-a456-426614174000',
     GARMIN_CLIENT_SECRET:'never-commit-real-credentials',
-    GARMIN_REDIRECT_URI:'https://asturpower-training-dev.netlify.app/.netlify/functions/garmin-callback',
+    GARMIN_REDIRECT_URI:redirectOrigin+'/.netlify/functions/garmin-callback',
     GARMIN_TOKEN_ENCRYPTION_KEY:randomBytes(32).toString('base64url'),
   };
   const athleteId='a0000000-0000-4000-8000-000000000001';
@@ -82,8 +83,8 @@ test('Garmin OAuth completo simulado: autorización, canje, permisos y vinculaci
     }
   });
   const verify=async()=>({id:athleteId,roles:['athlete']});
-  const start=createGarminStartHandler({env,verify,createClientFn:makeClient});
-  const startResponse=await start(new Request('https://asturpower-training-dev.netlify.app/.netlify/functions/garmin-start',{
+  const start=createGarminStartHandler({env,verify,createClientFn:makeClient,redirectOrigin});
+  const startResponse=await start(new Request(redirectOrigin+'/.netlify/functions/garmin-start',{
     method:'POST',headers:{Authorization:'Bearer token-de-prueba-seguro','Content-Type':'application/json'},body:JSON.stringify({consent:true})
   }));
   assert.equal(startResponse.status,200);
@@ -107,10 +108,11 @@ test('Garmin OAuth completo simulado: autorización, canje, permisos y vinculaci
     if(url.endsWith('/user/permissions'))return {ok:true,async json(){return {permissions:['ACTIVITY_EXPORT','WORKOUT_IMPORT']};}};
     throw new Error('Endpoint inesperado');
   };
-  const callback=createGarminCallbackHandler({env,createClientFn:makeClient,fetcher});
+  const callback=createGarminCallbackHandler({env,createClientFn:makeClient,fetcher,redirectOrigin});
   const url=env.GARMIN_REDIRECT_URI+'?state='+encodeURIComponent(state)+'&code=codigo-test';
   const finish=await callback(new Request(url));
   assert.equal(finish.status,303);
+  assert.equal(new URL(finish.headers.get('Location')).origin,redirectOrigin);
   assert.equal(new URL(finish.headers.get('Location')).searchParams.get('garmin'),'connected');
   assert.equal(connection.athlete_id,athleteId);
   assert.equal(connection.garmin_user_id,'idGarminDePrueba1234');

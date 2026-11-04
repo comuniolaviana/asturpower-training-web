@@ -1,0 +1,25 @@
+# Optional full staging app; NOT the currently selected deployment configuration.
+name = "asturpower-garmin-dev"
+main = "cloudflare/garmin-app-worker.mjs"
+compatibility_date = "2026-11-04"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[assets]
+directory = "./.wrangler/garmin-app-assets"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+not_found_handling = "none"
+
+[vars]
+ASTURPOWER_APP_ENABLED = "false"
+ASTURPOWER_TEAM_ENABLED = "false"
+ASTURPOWER_GARMIN_ENABLED = "false"
+ASTURPOWER_GARMIN_TRAINING_ENABLED = "false"
+ASTURPOWER_GARMIN_ACTIVITY_ENABLED = "false"
+
+[observability]
+enabled = false
+# No secret values, registered OAuth URL, paid binding, cron or custom domain.
+# Run build:garmin:cloudflare:app first. Switching this configuration needs review.

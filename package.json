@@ -11,7 +11,9 @@
     "test:database:garmin": "node scripts/test-garmin-database.mjs",
     "simulate:garmin": "node scripts/simulate-garmin.mjs",
     "build:garmin:cloudflare": "wrangler deploy --dry-run --config wrangler.garmin.toml --outdir .wrangler/garmin-build",
-    "test:garmin:cloudflare": "npm run build:garmin:cloudflare && node scripts/test-garmin-worker.mjs"
+    "test:garmin:cloudflare": "npm run build:garmin:cloudflare && node scripts/test-garmin-worker.mjs",
+    "test:garmin:cloudflare:app": "npm run build:garmin:cloudflare:app && wrangler deploy --dry-run --config wrangler.garmin-app.toml --outdir .wrangler/garmin-app-build && node scripts/test-garmin-app-worker.mjs",
+    "build:garmin:cloudflare:app": "npm run build && node scripts/prepare-garmin-app-assets.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0"
