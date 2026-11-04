@@ -1,6 +1,9 @@
 -- AsturPower only. Additive schema for staged Garmin synchronization.
 -- Review/apply as one transaction; does not enable any runtime feature.
 BEGIN;
+-- Abort instead of waiting indefinitely on a busy calendar/auth table.
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '30s';
 
 ALTER TABLE public.garmin_oauth_states ADD COLUMN IF NOT EXISTS consent_version text;
 ALTER TABLE public.garmin_connections ADD COLUMN IF NOT EXISTS consent_version text;

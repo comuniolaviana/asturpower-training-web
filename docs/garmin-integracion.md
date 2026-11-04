@@ -2,6 +2,20 @@
 
 Revisión: **4 de noviembre de 2026**. Trabajo sobre `desarrollo`, partiendo de `f56f5a2`. La landing y `main` quedan fuera de este cambio.
 
+## Continuación tras `0775990`
+
+Se ha vuelto a leer la rama, el esquema alojado y el portal oficial. AsturPower Training sigue **Approved** con Activity API, Training API, OAuth 2.0 y el mismo retorno registrado. No hay conexiones Garmin autorizadas individualmente en Supabase.
+
+- **Compatibilidad comprobada por lectura:** `database/tests/garmin-preflight.sql` devuelve diez comprobaciones correctas en el proyecto exclusivo AsturPower. Comprueba tipos, claves, RLS, acceso privado a tokens/estados, privilegios del servidor y ausencia de objetos que entren en conflicto. No lee registros personales ni ejecuta DDL. Es un control previo a la primera aplicación: después de aplicar la migración debe indicar que los objetos ya existen; no se debe interpretar como una autorización para volver a aplicarla.
+- **Cambios preparados:** cinco tablas privadas, dos columnas de versión de consentimiento, una de orden de permisos, seis funciones SQL reservadas al servidor y retirada de TRUNCATE/REFERENCES/TRIGGER del calendario para `authenticated`. No cambia las políticas de acceso entre entrenadores y deportistas ni activa sincronizaciones. Se han añadido límites de espera de bloqueo (5 s) y de sentencia (30 s) dentro de la transacción para abortar ante una base ocupada. La migración sigue **sin aplicar** y requiere autorización explícita.
+- **Pruebas repetidas:** 111 casos Node, 30 verificaciones SQL y dos denegaciones, y compilación Vite correctas. El control previo tiene además cinco escenarios locales: esquema compatible, tipo incompatible, RLS desactivada, permiso cliente indebido y función en conflicto. Todos se ejecutan sobre PostgreSQL local con datos ficticios y sin persistencia alojada.
+- **Cloudflare avanza:** Wrangler compila el receptor sin subirlo; el bundle se ejecuta en workerd local mediante Miniflare. Siete escenarios verifican salud, desactivación inicial, ausencia de callback OAuth alternativo, rechazo de XFF, persistencia cifrada, duplicados y error de almacenamiento. Las tres llamadas de almacenamiento son interceptadas; no alcanzan Supabase ni Garmin. Se usan exclusivamente credenciales y datos ficticios. Wrangler y Miniflare son herramientas de desarrollo, con versiones fijadas y lockfile; Miniflare corresponde a la versión beta incluida por este Wrangler.
+- **Netlify:** equipo Free y sitio privado, con el mismo despliegue publicado de `b103a233`. La conexión disponible no expone el saldo; la página de facturación pide iniciar sesión. No se puede afirmar que el bloqueo por créditos se haya levantado. No se han disparado builds ni cambiado planes o controles de acceso.
+- **Accesos pendientes:** API Tools continúa pidiendo la sesión específica de la aplicación; Cloudflare muestra inicio de sesión y no hay una conexión de despliegue disponible. No se han solicitado contraseñas, abierto nuevas cuentas ni copiado secretos entre proveedores. Que el portal Developer esté autenticado no autentica API Tools.
+- **Seguridad alojada:** los avisos informativos de RLS sin políticas sobre las dos tablas OAuth son intencionados: solo el servidor debe acceder. Supabase también avisa de protección contra contraseñas filtradas desactivada; su documentación la limita a Pro o superior. No se ha contratado ni activado un plan de pago. Los índices informados como no usados no se eliminan; los dos índices de claves externas recomendados quedan como mejora de rendimiento, sin bloquear esta migración.
+
+No se ha creado una nueva web accesible: `asturpower-training-dev.netlify.app` sigue requiriendo la sesión del equipo y sirviendo la versión anterior. La siguiente intervención necesaria es autorizar la migración preparada exclusivamente en AsturPower; no equivale a autorizar producción, abrir el sitio, cambiar URLs o vincular una cuenta personal de Garmin.
+
 ## Estado comprobado, separado de la simulación
 
 | Elemento | Evidencia y estado |
@@ -77,7 +91,7 @@ Se han preparado `_headers` y `_redirects` dentro del directorio público de **l
 
 `cloudflare/garmin-worker.mjs` y `wrangler.garmin.toml` preparan un **receptor alternativo**, con el mismo motor, la misma base AsturPower y el mismo modelo de seguridad. Tiene una ruta de salud y `/garmin/activities`; no migra el OAuth ni crea un retorno nuevo. El adaptador usa `CF-Connecting-IP` exclusivamente dentro del runtime de Cloudflare.
 
-La alternativa se ha probado como manejador Request/Response en Node con proveedor/base simulados. **No está desplegada ni validada en el runtime real de Cloudflare.** No se han creado cuentas, contratado recursos, copiado secretos a otro proveedor ni cambiado dominios. El cron de Cloudflare no está configurado. No se necesita migrar la web para continuar desarrollando.
+La alternativa se ha probado como manejador Request/Response en Node y también compilada con Wrangler y ejecutada en **workerd local**, con almacenamiento interceptado. **No está desplegada ni validada en la red alojada de Cloudflare.** No se han creado cuentas, contratado recursos, copiado secretos a otro proveedor ni cambiado dominios. El cron de Cloudflare no está configurado. No se necesita migrar la web para continuar desarrollando.
 
 ## Pruebas reproducibles
 
@@ -88,6 +102,7 @@ npm run test:garmin
 npm run test:database:garmin
 npm run simulate:garmin
 npm run build
+npm run test:garmin:cloudflare
 ```
 
 - Batería Node: OAuth, cifrado, consentimiento, callbacks, permisos, portafolios, PKCE, cuota/reintentos, bloqueos, envío, calendario, importación, deduplicación, lotes y adaptador alternativo. Incluye la interacción del botón en DOM simulado.
@@ -96,6 +111,7 @@ npm run build
 - La transacción de pruebas SQL se revierte y el ejecutor exige cero usuarios, actividades, conexiones y entregas al finalizar.
 - `docs/garmin-pruebas-simuladas.json` recoge una simulación con cero peticiones reales: un entrenamiento y una programación, sin duplicado al repetir; dos entregas iguales producen un único registro de cola y dos actividades de deportistas ficticios separados.
 - CI de `desarrollo` incluye la prueba de base de datos local. Las hojas de estilo se cargan en los puntos de entrada del navegador; se ha corregido el fallo previo que impedía ejecutar pruebas Node al importar CSS desde la lógica de interfaz.
+- CI ejecuta además la compilación sin subida y las pruebas de workerd local. El guion no lee `.env`, `.dev.vars` ni credenciales de cuenta; solo pasa bindings ficticios a Miniflare. Toda salida HTTP del Worker se intercepta y cualquier destino inesperado hace fallar la prueba. La prueba no certifica accesibilidad pública ni una sincronización real con Garmin.
 
 ## Lo que falta para una primera prueba real
 
@@ -116,3 +132,5 @@ Antes de uso real generalizado quedan la revisión de privacidad/consentimiento,
 - Descripción pública Activity API: https://developer.garmin.com/gc-developer-program/enterprise/activity-api/
 - Funciones y cabeceras Netlify: https://docs.netlify.com/build/functions/overview/ y https://docs.netlify.com/manage/routing/headers/
 - Cloudflare Node crypto: https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/
+- Pruebas locales Cloudflare: https://developers.cloudflare.com/workers/testing/miniflare/
+- Seguridad Supabase: https://supabase.com/docs/guides/database/postgres/row-level-security y https://supabase.com/docs/guides/auth/password-security

@@ -25,4 +25,8 @@ jobs:
         run: npm run build
       - name: Comprobar SQL Garmin con PostgreSQL local y datos ficticios
         run: npm run test:database:garmin
+      - name: Comprobar receptor Garmin en workerd local sin peticiones externas
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: npm run test:garmin:cloudflare
 
