@@ -27,7 +27,11 @@ ASTURPOWER_GARMIN_ENABLED = "true"
 ASTURPOWER_GARMIN_TRAINING_ENABLED = "true"
 ASTURPOWER_GARMIN_ACTIVITY_ENABLED = "false"
 
+[triggers]
+# Drain encrypted deliveries every five minutes; the Activity switch remains off.
+crons = ["*/5 * * * *"]
+
 [observability]
 enabled = false
-# No secret values, paid binding, cron or custom domain.
+# No secret values, paid binding or custom domain. Activity activation is separate.
 # User authorized staging access, panels, OAuth and Training; Activity remains disabled.

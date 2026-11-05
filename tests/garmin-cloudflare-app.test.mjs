@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAppWorker } from '../cloudflare/garmin-app-worker.mjs';
-import { garminFixture } from './garmin-fixture.mjs';
+import { garminFixture, activityBody } from './garmin-fixture.mjs';
+import { minimizeGarminNotification } from '../netlify/lib/garmin-activity-service.mjs';
+import { encryptedSecret } from '../netlify/lib/garmin-oauth-service.mjs';
 
 const APP_ORIGIN='https://asturpower-garmin-dev.asturpower-training.workers.dev';
 const request=(path,options)=>new Request(APP_ORIGIN+path,options);
@@ -107,4 +109,23 @@ test('Cloudflare assets get staging security headers and API errors never become
   assert.equal((await worker.fetch(request('/assets/missing.js'),env)).status,404);
   assert.equal((await worker.fetch(request('/.netlify/functions/missing'),env)).status,404);
   assert.equal((await worker.fetch(request('/calendar',{method:'POST'}),env)).status,405);
+});
+
+test('scheduled receiver stays inert when disabled or assigned another project',async()=>{
+  let touched=false;const tasks=[];
+  const worker=createAppWorker({repositoryFactory(){touched=true;throw new Error('must not access storage');}});
+  await worker.scheduled({}, {...project,ASTURPOWER_GARMIN_ACTIVITY_ENABLED:'false'}, {waitUntil:task=>tasks.push(task)});
+  await Promise.all(tasks);assert.equal(touched,false);assert.equal(tasks.length,1);
+  await worker.scheduled({}, {SUPABASE_URL:'https://otherproject.supabase.co',ASTURPOWER_GARMIN_ACTIVITY_ENABLED:'true'}, {waitUntil(){throw new Error('must not schedule');}});
+  assert.equal(touched,false);
+});
+test('scheduled receiver processes an encrypted fictitious delivery and clears its payload',async()=>{
+  const fixture=garminFixture(),id='scheduled-fixture',tasks=[];
+  const serialized=JSON.stringify(minimizeGarminNotification(activityBody()));
+  fixture.inbox.set(id,{id,payload_ciphertext:encryptedSecret(serialized,fixture.env.GARMIN_TOKEN_ENCRYPTION_KEY,'inbox:'+id),
+    received_at:'2026-11-05T12:00:00Z',status:'pending',attempts:0,cursor:0});
+  await createAppWorker({repositoryFactory:()=>fixture.repo}).scheduled({},fixture.env,{waitUntil:task=>tasks.push(task)});
+  await Promise.all(tasks);
+  assert.equal(tasks.length,1);assert.equal(fixture.activities.size,1);
+  assert.equal(fixture.inbox.get(id).status,'done');assert.equal(fixture.inbox.get(id).payload_ciphertext,null);
 });
