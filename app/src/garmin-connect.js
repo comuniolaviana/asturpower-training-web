@@ -50,6 +50,7 @@ export async function mountGarminPanel({root,client,user,role}){
     token_http_429:'Garmin ha indicado un límite temporal de solicitudes.',
     token_http_other:'Garmin no ha podido completar el intercambio de autorización.',
     token_network:'No se pudo completar la comunicación del servidor con Garmin.',
+    token_redirect:'Garmin devolvió una redirección inesperada; se ha detenido el intercambio para proteger las credenciales.',
     token_format:'La respuesta de autorización Garmin no tiene el formato esperado.',
     verifier_decryption:'No se pudo recuperar el estado cifrado de esta autorización.',
     identity_permissions:'No se pudieron comprobar la identidad y los permisos oficiales de Garmin.',

@@ -31,15 +31,18 @@ function setup({fetcher}={}){
 for(const body of [{consent:false},{},{consent:true,athlete_id:IDs.otherAthlete}])test('OAuth requires explicit own consent in the server body: '+JSON.stringify(body),async()=>{
   const f=setup(),response=await f.start(f.request(body));assert.equal(response.status,400);assert.equal(f.queries,0);
 });
-for(const status of [400,401,403,429,503])test('callback reports only an allowlisted token HTTP category: '+status,async()=>{
-  const f=setup({fetcher:async()=>({ok:false,status,json(){throw new Error('Must not read private provider error body');}})});
+for(const status of [301,302,303,307,308,400,401,403,429,503])test('callback reports only an allowlisted token HTTP category: '+status,async()=>{
+  const f=setup({fetcher:async(url,options)=>{
+    assert.equal(options.redirect,'manual');
+    return {ok:false,status,json(){throw new Error('Must not read private provider error body');}};
+  }});
   const authorization=new URL((await (await f.start(f.request({consent:true}))).json()).authorization_url);
   const url=new URL(f.env.GARMIN_REDIRECT_URI);
   url.searchParams.set('state',authorization.searchParams.get('state'));url.searchParams.set('code','private-fixture-code');
   const response=await f.callback(new Request(url));
   const landing=new URL(response.headers.get('location'));
   assert.equal(landing.searchParams.get('garmin'),'failed');
-  assert.equal(landing.searchParams.get('issue'),[400,401,403,429].includes(status)?'token_http_'+status:'token_http_other');
+  assert.equal(landing.searchParams.get('issue'),status<400?'token_redirect':[400,401,403,429].includes(status)?'token_http_'+status:'token_http_other');
   assert.deepEqual([...landing.searchParams.keys()],['garmin','issue']);
   assert.doesNotMatch(landing.toString(),/private-fixture|simulated-secret|code_verifier|state=/);
   assert.equal(f.used,true);assert.equal(f.providerCalls,1);

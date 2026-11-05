@@ -123,8 +123,18 @@ test('transport blocks arbitrary hosts and automatic redirects',async()=>{
   let redirected;
   const call=createGarminTransport({fetcher:async(url,opts)=>{redirected=opts.redirect;return Response.json({permissions:[]});}});
   await expectError(call('https://attacker.example',{token:'simulated'}),'endpoint_not_allowed');
-  await call(GARMIN.permissions,{token:'simulated'});assert.equal(redirected,'error');
+  await call(GARMIN.permissions,{token:'simulated'});assert.equal(redirected,'manual');
   assert.equal(retrySeconds('120'),120);assert.equal(retrySeconds('invalid'),60);
+});
+test('redirected workout POST is never followed or automatically safe to resend',async()=>{
+  let calls=0;
+  const call=createGarminTransport({fetcher:async(url,opts)=>{
+    calls++;assert.equal(url,GARMIN.createWorkout);assert.equal(opts.redirect,'manual');
+    return new Response(null,{status:307,headers:{Location:'https://attacker.example/collect'}});
+  }});
+  await assert.rejects(call(GARMIN.createWorkout,{method:'POST',token:'simulated',body:{workoutName:'fixture'}}),
+    error=>error.code==='garmin_redirect_rejected'&&error.uncertain===true);
+  assert.equal(calls,1);
 });
 test('webhook accepts official IP ranges and rejects spoofed forwarded headers',async()=>{
   assert.equal(isGarminIp('204.77.163.99'),true);assert.equal(isGarminIp('::ffff:198.233.176.10'),true);

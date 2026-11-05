@@ -97,6 +97,7 @@ test(`Garmin OAuth completo simulado en ${new URL(redirectOrigin).hostname}: PKC
   assert.notEqual(pending.state_hash,state);
   assert.ok(pending.expires_at>new Date(now).toISOString());
   const fetcher=async (url,options)=>{
+    assert.equal(options.redirect,'manual');
     garminCalls.push({url,method:options.method||'GET'});
     if(url.includes('/oauth/token')){
       assert.equal(options.method,'POST');

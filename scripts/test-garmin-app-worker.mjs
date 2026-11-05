@@ -2,6 +2,7 @@
 // All external network requests are denied. No deployed account is accessed.
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 const origin='https://asturpower-garmin-dev.asturpower-training.workers.dev';
 let networkRequests=0;
@@ -55,3 +56,77 @@ try{
   console.log(JSON.stringify({runtime:'local workerd + real Vite assets',scenarios:13,
     external_requests:networkRequests,real_garmin_connection:false,production_deployment:false},null,2));
 }finally{await runtime.dispose();}
+
+// Exercise the bundled OAuth handlers with workerd's native fetch, not an
+// injected fetcher. Only the provider responses and database are fictitious.
+// This catches unsupported RequestInit modes before a real account is needed.
+const fixtureEntry=`
+import {createAppWorker} from './garmin-app-worker.js';
+let pending=null,connection=null;
+const client=()=>({from(table){
+  if(table==='garmin_oauth_states')return {
+    async insert(row){pending=row;return {error:null};},
+    update(){return {eq(){return this;},is(){return this;},gt(){return this;},select(){return this;},
+      async maybeSingle(){const row=pending;pending=null;return {data:row,error:null};}};}
+  };
+  if(table==='garmin_connections')return {
+    async upsert(row){connection=row;return {error:null};},
+    select(){return {eq(){return this;},async maybeSingle(){return {data:connection,error:null};}};}
+  };
+  throw new Error('Unexpected fixture table');
+}});
+export default createAppWorker({createClientFn:client,verify:async()=>({id:'a0000000-0000-4000-8000-000000000001',roles:['athlete']})});
+`;
+const root=fileURLToPath(new URL('../.wrangler/garmin-app-build/',import.meta.url));
+let providerStatus=200,providerRequests=[];
+const oauthRuntime=new Miniflare({...convertV4MiniflareOptions({
+  modules:[{type:'ESModule',path:root+'oauth-fixture.mjs',contents:fixtureEntry},
+    {type:'ESModule',path:root+'garmin-app-worker.js',contents:await readFile(root+'garmin-app-worker.js','utf8')}],
+  compatibilityDate:'2026-11-04',compatibilityFlags:['nodejs_compat'],cf:false,
+  bindings:{SUPABASE_URL:'https://drnefgxdrultneeodtsy.supabase.co',
+    SUPABASE_PUBLISHABLE_KEY:'sb_publishable_fixture',SUPABASE_SECRET_KEY:'sb_secret_fixture',
+    GARMIN_CLIENT_ID:'fixture-client-id',GARMIN_CLIENT_SECRET:'fixture-client-secret',
+    GARMIN_TOKEN_ENCRYPTION_KEY:Buffer.alloc(32,7).toString('base64url'),
+    GARMIN_REDIRECT_URI:origin+'/.netlify/functions/garmin-callback',
+    ASTURPOWER_APP_ENABLED:'true',ASTURPOWER_GARMIN_ENABLED:'true',
+    ASTURPOWER_GARMIN_TRAINING_ENABLED:'false',ASTURPOWER_GARMIN_ACTIVITY_ENABLED:'false'},
+  outboundService:async request=>{
+    const url=new URL(request.url);providerRequests.push(url.origin+url.pathname);
+    if(url.origin==='https://diauth.garmin.com'&&url.pathname==='/di-oauth2-service/oauth/token'){
+      assert.equal(request.method,'POST');
+      assert.match(request.headers.get('authorization'),/^Basic /);
+      if(providerStatus!==200)return new Response(null,{status:providerStatus,headers:{Location:'https://must-not-be-followed.invalid/'}});
+      return Response.json({access_token:'fictional-access',refresh_token:'fictional-refresh',expires_in:86400,refresh_token_expires_in:7775998});
+    }
+    assert.equal(url.origin,'https://apis.garmin.com');
+    if(url.pathname==='/partner-gateway/rest/user/id')return Response.json({userId:'fictional-garmin-user'});
+    if(url.pathname==='/partner-gateway/rest/user/permissions')return Response.json({permissions:['WORKOUT_IMPORT']});
+    throw new Error('Unexpected outbound fixture request');
+  },
+}),telemetry:{enabled:false}});
+try{
+  const start=async()=>{
+    const response=await oauthRuntime.dispatchFetch(origin+'/.netlify/functions/garmin-start',{
+      method:'POST',headers:{Authorization:'Bearer fictional-session','Content-Type':'application/json'},body:JSON.stringify({consent:true})});
+    assert.equal(response.status,200);
+    const authorization=new URL((await response.json()).authorization_url);
+    const callback=new URL(origin+'/.netlify/functions/garmin-callback');
+    callback.searchParams.set('state',authorization.searchParams.get('state'));
+    callback.searchParams.set('code','fictional-code');
+    return oauthRuntime.dispatchFetch(callback.toString(),{redirect:'manual'});
+  };
+  const connected=await start();
+  assert.equal(connected.headers.get('location'),origin+'/?garmin=connected');
+  assert.equal(providerRequests.length,3);
+  const status=await oauthRuntime.dispatchFetch(origin+'/.netlify/functions/garmin-status',{headers:{Authorization:'Bearer fictional-session'}});
+  const state=await status.json();assert.equal(state.connected,true);assert.deepEqual(state.permissions,['WORKOUT_IMPORT']);
+  for(const redirect of [301,302,303,307,308]){
+    providerStatus=redirect;const previous=providerRequests.length;
+    const rejected=await start();
+    assert.equal(rejected.headers.get('location'),origin+'/?garmin=failed&issue=token_redirect');
+    assert.equal(providerRequests.length,previous+1);
+  }
+  assert.ok(providerRequests.every(url=>!url.includes('must-not-be-followed')));
+  console.log(JSON.stringify({runtime:'local workerd native OAuth fetch',scenarios:6,
+    simulated_provider_requests:providerRequests.length,real_garmin_connection:false,external_network:false}));
+}finally{await oauthRuntime.dispose();}

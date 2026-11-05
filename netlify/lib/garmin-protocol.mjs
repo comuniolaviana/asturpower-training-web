@@ -79,11 +79,15 @@ export function createGarminTransport({fetcher=fetch,reserve=async()=>{},timeout
       'endpoint_not_allowed',503);
     await reserve(athleteId,oauth);
     let response;
-    try{response=await fetcher(url,{method,redirect:'error',signal:AbortSignal.timeout(timeoutMs),
+    // Manual is supported by both Workers and Node; never follow redirects
+    // with Authorization or a structured workout body.
+    try{response=await fetcher(url,{method,redirect:'manual',signal:AbortSignal.timeout(timeoutMs),
       headers:{Accept:'application/json',...(token?{Authorization:`Bearer ${token}`} : {}),
         ...(body?{'Content-Type':oauth?'application/x-www-form-urlencoded':'application/json'}:{}),...headers},
       ...(body?{body:oauth?body:JSON.stringify(body)}:{})});}
     catch{throw new GarminError('garmin_transport_failed',503,{uncertain:method==='POST'&&!oauth});}
+    if(response.status>=300&&response.status<400)
+      throw new GarminError('garmin_redirect_rejected',503,{uncertain:method==='POST'&&!oauth});
     if(!response.ok){
       if(response.status===429)throw new GarminError('garmin_rate_limited',429,{retryAfter:retrySeconds(response.headers?.get('retry-after'))});
       if([401,403,412].includes(response.status))throw new GarminError('garmin_permission_or_token_rejected',403);

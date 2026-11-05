@@ -112,11 +112,11 @@ async function responseJson(response){
   return body;
 }
 async function garminGet(url,token,fetcher=fetch){
-  const response=await fetcher(url,{redirect:'error',signal:AbortSignal.timeout(8000),headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}});
+  const response=await fetcher(url,{redirect:'manual',signal:AbortSignal.timeout(8000),headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}});
   return responseJson(response);
 }
 const CALLBACK_ISSUES=new Set(['state_storage','consent_changed','verifier_decryption','token_network',
-  'token_http_400','token_http_401','token_http_403','token_http_429','token_http_other','token_format',
+  'token_http_400','token_http_401','token_http_403','token_http_429','token_http_other','token_redirect','token_format',
   'identity_permissions','connection_storage','quota','lease']);
 function landing(status,redirectOrigin=NETLIFY_ORIGIN,issue){
   const url=new URL(OAUTH_ORIGINS.has(redirectOrigin)?redirectOrigin:NETLIFY_ORIGIN);
@@ -207,10 +207,13 @@ export function createGarminCallbackHandler({env=process.env,createClientFn=crea
       const body=new URLSearchParams({grant_type:'authorization_code',code,code_verifier:verifier,redirect_uri:settings.redirect_uri});
       stage='token_network';
       const tokenResponse=await fetcher(TOKEN_URL,{
-        method:'POST',redirect:'error',signal:AbortSignal.timeout(8000),headers:{Authorization:'Basic '+credentials,'Content-Type':'application/x-www-form-urlencoded'},
+        // Workers rejects redirect:'error' before sending. Manual never follows
+        // a Location header, so credentials remain at this fixed official URL.
+        method:'POST',redirect:'manual',signal:AbortSignal.timeout(8000),headers:{Authorization:'Basic '+credentials,'Content-Type':'application/x-www-form-urlencoded'},
         body:body.toString(),
       });
       if(!tokenResponse.ok){
+        if(tokenResponse.status>=300&&tokenResponse.status<400)return finishLanding('failed','token_redirect');
         const issue=[400,401,403,429].includes(tokenResponse.status)?'token_http_'+tokenResponse.status:'token_http_other';
         return finishLanding('failed',issue);
       }
@@ -283,7 +286,7 @@ export function createGarminDisconnectHandler({env=process.env,verify=authentica
         await reserve(service,env,actor.id,true);
         const token=await responseJson(await fetcher(TOKEN_URL,{
           method:'POST',
-          redirect:'error',signal:AbortSignal.timeout(8000),
+          redirect:'manual',signal:AbortSignal.timeout(8000),
           headers:{Authorization:'Basic '+credentials,'Content-Type':'application/x-www-form-urlencoded'},
           body:new URLSearchParams({grant_type:'refresh_token',refresh_token:refresh}).toString(),
         }));
@@ -303,7 +306,7 @@ export function createGarminDisconnectHandler({env=process.env,verify=authentica
       }
       await reserve(service,env,actor.id);
       const revoked=await fetcher('https://apis.garmin.com/partner-gateway/rest/user/registration',{
-        method:'DELETE',redirect:'error',signal:AbortSignal.timeout(8000),headers:{Authorization:'Bearer '+access,Accept:'application/json'},
+        method:'DELETE',redirect:'manual',signal:AbortSignal.timeout(8000),headers:{Authorization:'Bearer '+access,Accept:'application/json'},
       });
       if(!revoked.ok)throw new Error('garmin_revocation_failed');
       check(await service.from('garmin_connections').delete().eq('athlete_id',actor.id));
