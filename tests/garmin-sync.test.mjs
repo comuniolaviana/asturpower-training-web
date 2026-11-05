@@ -64,6 +64,20 @@ test('permissions are checked on Garmin immediately before an export',async()=>{
   const f=garminFixture({permissions:['ACTIVITY_EXPORT']});await expectError(send(f),'workout_permission_required');
   assert.equal(f.sent.workouts,0);assert.deepEqual(f.connections.get(IDs.athlete).permissions,['ACTIVITY_EXPORT']);
 });
+test('a newly granted Training permission is checked live despite an older local cache',async()=>{
+  const f=garminFixture({permissions:['WORKOUT_IMPORT']});
+  f.connections.get(IDs.athlete).permissions=['ACTIVITY_EXPORT'];
+  assert.equal((await send(f)).status,'scheduled');
+  assert.deepEqual(f.connections.get(IDs.athlete).permissions,['WORKOUT_IMPORT']);
+  assert.equal(f.calls[0].url,GARMIN.permissions);
+});
+test('an absent cached Training permission never grants access when Garmin denies it',async()=>{
+  const f=garminFixture({permissions:['ACTIVITY_EXPORT']});
+  f.connections.get(IDs.athlete).permissions=[];
+  await expectError(send(f),'workout_permission_required');
+  assert.equal(f.calls.length,1);assert.equal(f.calls[0].url,GARMIN.permissions);
+  assert.deepEqual(f.sent,{workouts:0,schedules:0});assert.equal(f.jobs.size,0);
+});
 test('expired access token rotates refresh token and only ciphertext is stored',async()=>{
   const f=garminFixture(),row=f.connections.get(IDs.athlete);row.access_expires_at=new Date(0).toISOString();
   await send(f);const updated=f.connections.get(IDs.athlete);

@@ -55,7 +55,10 @@ export async function sendPlannedWorkout({repo,env,actor,workoutId,fetcher=fetch
       &&current.status==='planned'&&digest(JSON.stringify({payload:toGarminWorkout(current),date:current.scheduled_date}))===hash,
       'workout_changed',409);
     const connection=await repo.connection(workout.athlete_id);
-    demand(connection?.permissions?.includes('WORKOUT_IMPORT'),'workout_permission_required',403);
+    // A user can grant Training later in Garmin Connect. The cached permission
+    // must not prevent checking the provider; the live grant and the effective
+    // stored permission are both required below, before creating any export.
+    demand(connection,'garmin_not_connected',409);
     const call=createGarminTransport({fetcher,reserve:(id,oauth)=>repo.reserve(id,oauth)});
     const token=await usableAccessToken(connection,env,repo,call);
     const permissionCheckStarted=Math.floor(Date.now()/1000);
