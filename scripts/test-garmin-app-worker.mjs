@@ -25,6 +25,16 @@ try{
   const js=await runtime.dispatchFetch(origin+script);
   assert.equal(js.status,200);
   assert.match(js.headers.get('content-type'),/javascript/);
+  const privacy=await runtime.dispatchFetch(origin+'/privacidad-garmin.html');
+  assert.equal(privacy.status,200);
+  assert.match(privacy.headers.get('content-type'),/text\/html/);
+  const privacyText=await privacy.text();
+  assert.match(privacyText,/Cloudflare Workers/);
+  assert.match(privacyText,/garmin-2026-11-05/);
+  assert.doesNotMatch(privacyText,/<script|style=/);
+  const css=await runtime.dispatchFetch(origin+'/garmin-privacy.css');
+  assert.equal(css.status,200);
+  assert.match(css.headers.get('content-type'),/text\/css/);
   const deepLink=await runtime.dispatchFetch(origin+'/calendar');
   assert.equal(deepLink.status,200);
   assert.equal(await deepLink.text(),html);
@@ -42,6 +52,6 @@ try{
     configuration_invalid_fields:['SUPABASE_PUBLISHABLE_KEY','SUPABASE_SECRET_KEY','GARMIN_CLIENT_ID','GARMIN_CLIENT_SECRET','GARMIN_TOKEN_ENCRYPTION_KEY','GARMIN_REDIRECT_URI'],
     configuration_problem_types:{SUPABASE_PUBLISHABLE_KEY:'missing',SUPABASE_SECRET_KEY:'missing',GARMIN_CLIENT_ID:'missing',GARMIN_CLIENT_SECRET:'missing',GARMIN_TOKEN_ENCRYPTION_KEY:'missing',GARMIN_REDIRECT_URI:'missing'},diagnostic_version:2});
   assert.equal(networkRequests,0);
-  console.log(JSON.stringify({runtime:'local workerd + real Vite assets',scenarios:11,
+  console.log(JSON.stringify({runtime:'local workerd + real Vite assets',scenarios:13,
     external_requests:networkRequests,real_garmin_connection:false,production_deployment:false},null,2));
 }finally{await runtime.dispose();}

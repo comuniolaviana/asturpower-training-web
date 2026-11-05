@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Privacidad de Garmin · AsturPower Training</title>
+  <link rel="stylesheet" href="/garmin-privacy.css">
+</head>
+<body><main>
+  <a href="/">Volver a AsturPower</a>
+  <h1>Conexión Garmin y privacidad</h1>
+  <p>Información del entorno de pruebas de AsturPower Training. Actualizada el 5 de noviembre de 2026. Versión del consentimiento: <code>garmin-2026-11-05</code>.</p>
+  <p class="notice">Esta página prepara la primera prueba voluntaria. Su publicación no significa que Garmin esté conectado, que se hayan enviado entrenamientos ni que se reciban actividades. Cada función requiere su activación y tu autorización individual.</p>
+  <h2>Responsable y contacto</h2>
+  <p>AsturPower Training. La identificación del responsable figura en la <a href="https://asturpower-training.netlify.app/privacidad-garmin.html" rel="noopener noreferrer">información de privacidad original</a>. Para ejercer tus derechos o consultar sobre el tratamiento: <a href="mailto:AsturPower.Training@gmail.com">AsturPower.Training@gmail.com</a>. Esta información añade el uso de Cloudflare en las pruebas; la web pública conserva su información propia.</p>
+  <h2>Tu decisión y la finalidad</h2>
+  <p>Conectar Garmin es voluntario. Solo tú puedes autorizar tu cuenta desde Garmin Connect. AsturPower solicita un consentimiento expreso antes de abrir esa autorización, incluido el tratamiento de datos fisiológicos cuando los compartas. La finalidad es enviar tus entrenamientos planificados y, cuando esté habilitada la recepción, mostrar las actividades para tu seguimiento y el de los entrenadores que hayas autorizado. La autorización de un entrenador no sustituye a la tuya.</p>
+  <p>No se venden estos datos ni se utilizan para publicidad, entrenamiento, evaluación o mejora de modelos de inteligencia artificial.</p>
+  <h2>Datos necesarios</h2>
+  <ul>
+    <li>Cuenta AsturPower: identidad de acceso, perfil, roles y vínculos autorizados con entrenadores.</li>
+    <li>Conexión Garmin: identificador del usuario Garmin, permisos concedidos, consentimiento y credenciales de acceso y renovación cifradas en el servidor.</li>
+    <li>Envío de entrenamientos: deporte, fecha, duración y pasos e intervalos, con objetivos como potencia o ritmo, e identificadores y estado de sincronización.</li>
+    <li>Recepción de actividades, cuando se active: resúmenes deportivos autorizados, fecha, deporte, duración, distancia y métricas disponibles como frecuencia cardíaca, potencia o cadencia. Estas métricas pueden revelar información sobre tu salud.</li>
+    <li>Seguridad y operación: estados temporales de autorización y registros mínimos de entrega, errores y reintentos. No deben incluir contraseñas ni tokens en texto legible.</li>
+  </ul>
+  <p>Esta primera prueba no incluye importar todo el historial anterior ni descargar archivos o rutas GPS. Los permisos que concedas se comprueban en el servidor antes de operar.</p>
+  <h2>Proveedores y acceso</h2>
+  <ul>
+    <li><strong>Garmin:</strong> autorización oficial, recepción de entrenamientos y entrega de actividades que autorices. Se aplican también sus condiciones y privacidad.</li>
+    <li><strong>Cloudflare Workers:</strong> aloja este entorno de pruebas y ejecuta las solicitudes de autenticación, OAuth e integración. Por ello procesa las peticiones y los datos necesarios para atenderlas. Los secretos se guardan como secretos del servidor.</li>
+    <li><strong>Supabase:</strong> proyecto exclusivo de AsturPower para autenticación y almacenamiento, con permisos por usuario, rol y vinculación entre entrenador y deportista.</li>
+    <li><strong>Netlify:</strong> alojamiento de la web pública y del entorno anterior. Este entorno Garmin de pruebas funciona en Cloudflare.</li>
+    <li><strong>Google/Gmail:</strong> correo de soporte. No se envían automáticamente actividades ni datos de salud a ese buzón.</li>
+  </ul>
+  <p>Tu información deportiva solo debe ser accesible para ti y tus entrenadores vinculados y autorizados, además del acceso técnico necesario para operar y proteger el servicio. No se comparte con otros entrenadores por pertenecer a la plataforma. El acceso al código en GitHub no incluye credenciales ni datos deportivos privados.</p>
+  <p>Estos proveedores pueden realizar tratamientos internacionales según sus condiciones, acuerdos de tratamiento y garantías aplicables. Esta publicación no certifica una auditoría legal ni habilita el uso generalizado con datos de salud. Antes de ampliar las pruebas deben revisarse y documentarse esas garantías.</p>
+  <h2>Conservación y seguridad</h2>
+  <p>Las credenciales Garmin permanecen cifradas en el servidor y la comunicación usa HTTPS. Los estados OAuth caducan a los diez minutos y solo pueden utilizarse una vez. Al desconectar se revoca el acceso y se eliminan las credenciales de conexión conforme al resultado de esa operación.</p>
+  <p>La integración prevé conservar las cargas temporales de notificaciones un máximo de siete días y sus metadatos de entrega ocho días, mediante su proceso de mantenimiento. La recepción y ese proceso deben estar configurados antes de habilitar actividades. Las actividades y entrenamientos ya guardados no se borran por el mero hecho de desconectar: puedes solicitar su supresión. Antes de ampliar el servicio se concretarán los plazos generales y de copias de seguridad.</p>
+  <h2>Retirar el consentimiento y ejercer derechos</h2>
+  <p>Puedes utilizar «Desconectar Garmin» en tu cuenta AsturPower y retirar los permisos desde Garmin Connect. No conceder o retirar permisos impide las sincronizaciones que los requieran; no elimina automáticamente datos ya recibidos ni afecta al tratamiento realizado antes de la retirada.</p>
+  <p>Puedes solicitar acceso, rectificación, supresión, limitación, oposición y portabilidad, cuando correspondan, a través del correo indicado. Puedes retirar el vínculo con un entrenador y solicitar revisión de su acceso. También puedes reclamar ante la <a href="https://www.aepd.es/">Agencia Española de Protección de Datos</a>.</p>
+  <p>No introduzcas contraseñas, claves ni tokens en mensajes de soporte. La prueba de llegada a un dispositivo requiere además sincronizarlo personalmente con Garmin Connect.</p>
+</main></body></html>

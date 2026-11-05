@@ -5,3 +5,6 @@ await rm(target,{recursive:true,force:true});
 await mkdir(target,{recursive:true});
 await cp(new URL('../dist-app/index.html',import.meta.url),new URL('index.html',target));
 await cp(new URL('../dist-app/assets/',import.meta.url),new URL('assets/',target),{recursive:true});
+for(const name of ['privacidad-garmin.html','garmin-privacy.css']){
+  await cp(new URL('../dist-app/'+name,import.meta.url),new URL(name,target));
+}

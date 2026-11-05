@@ -22,7 +22,7 @@ const json = (body,status=200)=>new Response(JSON.stringify(body),{
 });
 const sha256 = value=>createHash('sha256').update(value,'utf8').digest('hex');
 const base64url = bytes=>Buffer.from(bytes).toString('base64url');
-const CONSENT_VERSION='garmin-2026-11-04';
+const CONSENT_VERSION='garmin-2026-11-05';
 const syncEnabled=env=>env.ASTURPOWER_GARMIN_TRAINING_ENABLED==='true'||env.ASTURPOWER_GARMIN_ACTIVITY_ENABLED==='true';
 async function reserve(service,env,athleteId,oauth=false){
   if(!syncEnabled(env))return;

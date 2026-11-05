@@ -105,6 +105,8 @@ export async function mountGarminPanel({root,client,user,role}){
   const policy=el('p','garmin-privacy');
   const policyLink=el('a','', 'Información sobre privacidad y datos de Garmin');
   policyLink.href='https://asturpower-training.netlify.app/privacidad-garmin.html';
+  if(root.ownerDocument.location.origin==='https://asturpower-garmin-dev.asturpower-training.workers.dev')
+    policyLink.href='/privacidad-garmin.html';
   policyLink.target='_blank';policyLink.rel='noopener noreferrer';
   policy.append(policyLink);wrap.append(policy);
   const consent=el('label','garmin-optin');
