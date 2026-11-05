@@ -4,6 +4,7 @@ import './style.css';
 import './garmin-connect.css';
 import './garmin-original.css';
 import './planning.css';
+import './performance.css';
 
 const root = document.querySelector('#app');
 try {
