@@ -6,6 +6,22 @@ import { garminFixture } from './garmin-fixture.mjs';
 const APP_ORIGIN='https://asturpower-garmin-dev.asturpower-training.workers.dev';
 const request=(path,options)=>new Request(APP_ORIGIN+path,options);
 const project={SUPABASE_URL:'https://drnefgxdrultneeodtsy.supabase.co'};
+test('Cloudflare readiness checks format without exposing values or enabling OAuth',async()=>{
+  const fixture=garminFixture();
+  const env={...fixture.env,...project,GARMIN_REDIRECT_URI:APP_ORIGIN+'/.netlify/functions/garmin-callback',
+    ASTURPOWER_APP_ENABLED:'false',ASTURPOWER_GARMIN_ENABLED:'false',ASTURPOWER_GARMIN_ACTIVITY_ENABLED:'false'};
+  const worker=createAppWorker({verify:()=>{throw new Error('Must not access user data');},
+    fetcher:()=>{throw new Error('Must not contact Garmin');}});
+  const result=await worker.fetch(request('/health'),env);
+  assert.deepEqual(await result.json(),{service:'asturpower-garmin-app',enabled:false,configuration_format_ready:true});
+  for(const name of ['SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY','SUPABASE_SECRET_KEY','GARMIN_CLIENT_ID','GARMIN_CLIENT_SECRET','GARMIN_TOKEN_ENCRYPTION_KEY','GARMIN_REDIRECT_URI']){
+    const response=await worker.fetch(request('/health'),{...env,[name]:''});
+    assert.equal((await response.json()).configuration_format_ready,false,name);
+  }
+  assert.equal((await worker.fetch(request('/health',{method:'POST'}),env)).status,405);
+  assert.equal((await worker.fetch(request('/.netlify/functions/garmin-start',{method:'POST'}),env)).status,503);
+  assert.equal((await worker.fetch(request('/.netlify/functions/public-config'),env)).status,503);
+});
 test('Cloudflare app refuses another project and unknown server routes without network',async()=>{
   const worker=createAppWorker();
   for(const env of [{},{SUPABASE_URL:'https://otherproject.supabase.co'}]){

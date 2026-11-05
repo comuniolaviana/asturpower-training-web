@@ -15,6 +15,9 @@ run_worker_first = true
 html_handling = "none"
 not_found_handling = "none"
 
+[secrets]
+required = ["GARMIN_CLIENT_ID", "GARMIN_CLIENT_SECRET", "GARMIN_TOKEN_ENCRYPTION_KEY", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY"]
+
 [vars]
 SUPABASE_URL = "https://drnefgxdrultneeodtsy.supabase.co"
 GARMIN_REDIRECT_URI = "https://asturpower-garmin-dev.asturpower-training.workers.dev/.netlify/functions/garmin-callback"

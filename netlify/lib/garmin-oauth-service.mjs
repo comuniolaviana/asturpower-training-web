@@ -59,12 +59,12 @@ export function decryptedSecret(value,keyText,context){
 const NETLIFY_ORIGIN='https://asturpower-training-dev.netlify.app';
 // Only explicit server-side adapters can select the reviewed staging origin.
 const OAUTH_ORIGINS=new Set([NETLIFY_ORIGIN,'https://asturpower-garmin-dev.asturpower-training.workers.dev']);
-const validConfiguration = (env,redirectOrigin=NETLIFY_ORIGIN)=>{
-  const config=resolvePublicConfig(env);
+const configuration = (env,redirectOrigin=NETLIFY_ORIGIN)=>{
+  const config=resolvePublicConfig(env,{requireEnabled:false});
   const url=env.GARMIN_REDIRECT_URI;
   let redirect;
   try{redirect=new URL(url);}catch{return null;}
-  if(env.ASTURPOWER_GARMIN_ENABLED!=='true'||!config
+  if(!config
     ||!/^sb_secret_[A-Za-z0-9_-]+$/.test(env.SUPABASE_SECRET_KEY||'')
     ||!/^[-a-zA-Z0-9_]{8,128}$/.test(env.GARMIN_CLIENT_ID||'')
     ||!env.GARMIN_CLIENT_SECRET||env.GARMIN_CLIENT_SECRET.length<8
@@ -74,6 +74,11 @@ const validConfiguration = (env,redirectOrigin=NETLIFY_ORIGIN)=>{
     ||redirect.search||redirect.hash||redirect.username||redirect.password) return null;
   return {config,redirect_uri:redirect.toString()};
 };
+// Syntax only: no provider call, credentials returned, or module activation.
+export const isGarminConfigurationReady=(env,redirectOrigin=NETLIFY_ORIGIN)=>Boolean(configuration(env,redirectOrigin));
+const validConfiguration=(env,redirectOrigin=NETLIFY_ORIGIN)=>
+  env.ASTURPOWER_APP_ENABLED==='true'&&env.ASTURPOWER_GARMIN_ENABLED==='true'
+    ?configuration(env,redirectOrigin):null;
 const createService=(settings,env,createClientFn=createClient)=>
   createClientFn(settings.config.supabaseUrl,env.SUPABASE_SECRET_KEY,{
     auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},

@@ -1,6 +1,6 @@
 // Public configuration only. No service_role, JWT or Garmin secrets are accepted.
-export function resolvePublicConfig(env) {
-  if (env.ASTURPOWER_APP_ENABLED !== 'true') return null;
+export function resolvePublicConfig(env, { requireEnabled = true } = {}) {
+  if (requireEnabled && env.ASTURPOWER_APP_ENABLED !== 'true') return null;
   try {
     const url = new URL(env.SUPABASE_URL);
     const key = env.SUPABASE_PUBLISHABLE_KEY || '';
@@ -17,3 +17,4 @@ export default async function handler(request) {
   const config = resolvePublicConfig(process.env);
   return new Response(JSON.stringify(config || { error: 'Access unavailable' }), { status: config ? 200 : 503, headers });
 }
+

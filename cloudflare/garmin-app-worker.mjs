@@ -1,6 +1,6 @@
-// Optional full staging adapter. The deployed receiver configuration is unchanged.
+// Isolated full staging adapter; private modules require explicit activation.
 import { createGarminStartHandler, createGarminStatusHandler, createGarminCallbackHandler,
-  createGarminDisconnectHandler } from '../netlify/lib/garmin-oauth-service.mjs';
+  createGarminDisconnectHandler, isGarminConfigurationReady } from '../netlify/lib/garmin-oauth-service.mjs';
 import { createGarminWorkoutHandler } from '../netlify/lib/garmin-training-service.mjs';
 import { createTeamHandler } from '../netlify/lib/team-service.mjs';
 import { resolvePublicConfig } from '../netlify/functions/public-config.mjs';
@@ -30,7 +30,12 @@ export function createAppWorker(dependencies={}){
       // Never derive the callback/landing origin from Host or forwarding headers.
       if(url.origin!==APP_ORIGIN)return protect(json({error:'invalid_origin'},421));
       try{
-        if(url.pathname==='/health')return protect(await receiver.fetch(request,env));
+        if(url.pathname==='/health'){
+          if(request.method!=='GET')return protect(json({error:'method_not_allowed'},405));
+          return protect(json({service:'asturpower-garmin-app',
+            enabled:env.ASTURPOWER_GARMIN_ACTIVITY_ENABLED==='true',
+            configuration_format_ready:env.SUPABASE_URL===SUPABASE_URL&&isGarminConfigurationReady(env,APP_ORIGIN)},200));
+        }
         if(url.pathname==='/garmin/activities'){
           if(env.SUPABASE_URL!==SUPABASE_URL)return protect(json({error:'app_not_configured'},503));
           return protect(await receiver.fetch(request,env));
