@@ -39,6 +39,16 @@ test('Cloudflare diagnostic categories distinguish masked and malformed input wi
   const response=await createAppWorker().fetch(request('/health'),{...env,SUPABASE_SECRET_KEY:' '+env.SUPABASE_SECRET_KEY+'\n'});
   assert.deepEqual((await response.json()).configuration_problem_types,{SUPABASE_SECRET_KEY:'surrounding_whitespace'});
 });
+test('Cloudflare refuses a copied client-secret mask even when it meets the minimum length',async()=>{
+  const env={...garminFixture().env,...project,GARMIN_REDIRECT_URI:APP_ORIGIN+'/.netlify/functions/garmin-callback'};
+  for(const value of ['********private-marker','\u2022\u2022\u2022\u2022private-marker']){
+    const response=await createAppWorker().fetch(request('/health'),{...env,GARMIN_CLIENT_SECRET:value});
+    const text=await response.text(),body=JSON.parse(text);
+    assert.deepEqual(body.configuration_invalid_fields,['GARMIN_CLIENT_SECRET']);
+    assert.deepEqual(body.configuration_problem_types,{GARMIN_CLIENT_SECRET:'masked_value'});
+    assert.doesNotMatch(text,/private-marker/);
+  }
+});
 test('Cloudflare app refuses another project and unknown server routes without network',async()=>{
   const worker=createAppWorker();
   for(const env of [{},{SUPABASE_URL:'https://otherproject.supabase.co'}]){

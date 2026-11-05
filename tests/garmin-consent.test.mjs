@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createGarminStartHandler,createGarminCallbackHandler} from '../netlify/lib/garmin-oauth-service.mjs';
 import {garminFixture,IDs} from './garmin-fixture.mjs';
-function setup(){
+function setup({fetcher}={}){
   const env={...garminFixture().env,ASTURPOWER_GARMIN_TRAINING_ENABLED:'false',ASTURPOWER_GARMIN_ACTIVITY_ENABLED:'false'};
   let stored=null,used=false,queries=0,providerCalls=0;
   const client=()=>({
@@ -21,13 +21,31 @@ function setup(){
     },
   });
   const start=createGarminStartHandler({env,verify:async()=>({id:IDs.athlete,roles:['athlete']}),createClientFn:client});
-  const callback=createGarminCallbackHandler({env,createClientFn:client,fetcher:async()=>{providerCalls++;throw new Error('must not call provider');}});
+  const callback=createGarminCallbackHandler({env,createClientFn:client,fetcher:async(...args)=>{
+    providerCalls++;if(fetcher)return fetcher(...args);throw new Error('must not call provider');
+  }});
   const request=body=>new Request('https://asturpower-training-dev.netlify.app/.netlify/functions/garmin-start',{
     method:'POST',headers:{Authorization:'Bearer simulated-session','Content-Type':'application/json'},body:JSON.stringify(body)});
   return {env,start,callback,request,get queries(){return queries;},get used(){return used;},get providerCalls(){return providerCalls;}};
 }
 for(const body of [{consent:false},{},{consent:true,athlete_id:IDs.otherAthlete}])test('OAuth requires explicit own consent in the server body: '+JSON.stringify(body),async()=>{
   const f=setup(),response=await f.start(f.request(body));assert.equal(response.status,400);assert.equal(f.queries,0);
+});
+for(const status of [400,401,403,429,503])test('callback reports only an allowlisted token HTTP category: '+status,async()=>{
+  const f=setup({fetcher:async()=>({ok:false,status,json(){throw new Error('Must not read private provider error body');}})});
+  const authorization=new URL((await (await f.start(f.request({consent:true}))).json()).authorization_url);
+  const url=new URL(f.env.GARMIN_REDIRECT_URI);
+  url.searchParams.set('state',authorization.searchParams.get('state'));url.searchParams.set('code','private-fixture-code');
+  const response=await f.callback(new Request(url));
+  const landing=new URL(response.headers.get('location'));
+  assert.equal(landing.searchParams.get('garmin'),'failed');
+  assert.equal(landing.searchParams.get('issue'),[400,401,403,429].includes(status)?'token_http_'+status:'token_http_other');
+  assert.deepEqual([...landing.searchParams.keys()],['garmin','issue']);
+  assert.doesNotMatch(landing.toString(),/private-fixture|simulated-secret|code_verifier|state=/);
+  assert.equal(f.used,true);assert.equal(f.providerCalls,1);
+  const repeated=await f.callback(new Request(url));
+  assert.equal(new URL(repeated.headers.get('location')).searchParams.get('garmin'),'expired');
+  assert.equal(f.providerCalls,1);
 });
 test('malformed consent payload returns a client error and stores no OAuth state',async()=>{
   const f=setup(),request=f.request({consent:true});

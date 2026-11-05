@@ -68,7 +68,8 @@ export function garminConfigurationIssues(env,redirectOrigin=NETLIFY_ORIGIN){
   }
   if(!/^sb_secret_[A-Za-z0-9_-]+$/.test(env.SUPABASE_SECRET_KEY||''))issues.push('SUPABASE_SECRET_KEY');
   if(!/^[-a-zA-Z0-9_]{8,128}$/.test(env.GARMIN_CLIENT_ID||''))issues.push('GARMIN_CLIENT_ID');
-  if(!env.GARMIN_CLIENT_SECRET||env.GARMIN_CLIENT_SECRET.length<8)issues.push('GARMIN_CLIENT_SECRET');
+  if(!env.GARMIN_CLIENT_SECRET||env.GARMIN_CLIENT_SECRET.length<8
+    ||/^(?:\*{3,}|[\u2022\u25cf]{3,})/.test(env.GARMIN_CLIENT_SECRET))issues.push('GARMIN_CLIENT_SECRET');
   if(Buffer.from(env.GARMIN_TOKEN_ENCRYPTION_KEY||'','base64url').length!==32)issues.push('GARMIN_TOKEN_ENCRYPTION_KEY');
   let redirect;
   try{redirect=new URL(env.GARMIN_REDIRECT_URI);}catch{}
@@ -114,9 +115,13 @@ async function garminGet(url,token,fetcher=fetch){
   const response=await fetcher(url,{redirect:'error',signal:AbortSignal.timeout(8000),headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}});
   return responseJson(response);
 }
-function landing(status,redirectOrigin=NETLIFY_ORIGIN){
+const CALLBACK_ISSUES=new Set(['state_storage','consent_changed','verifier_decryption','token_network',
+  'token_http_400','token_http_401','token_http_403','token_http_429','token_http_other','token_format',
+  'identity_permissions','connection_storage','quota','lease']);
+function landing(status,redirectOrigin=NETLIFY_ORIGIN,issue){
   const url=new URL(OAUTH_ORIGINS.has(redirectOrigin)?redirectOrigin:NETLIFY_ORIGIN);
   url.searchParams.set('garmin',status);
+  if(CALLBACK_ISSUES.has(issue))url.searchParams.set('issue',issue);
   return new Response(null,{status:303,headers:{...HEADERS,Location:url.toString()}});
 }
 export function createGarminStartHandler({env=process.env,verify=authenticateActor,createClientFn=createClient,redirectOrigin=NETLIFY_ORIGIN}={}){
@@ -170,7 +175,7 @@ export function createGarminStatusHandler({env=process.env,verify=authenticateAc
   };
 }
 export function createGarminCallbackHandler({env=process.env,createClientFn=createClient,fetcher=fetch,redirectOrigin=NETLIFY_ORIGIN}={}){
-  const finishLanding=status=>landing(status,redirectOrigin);
+  const finishLanding=(status,issue)=>landing(status,redirectOrigin,issue);
   return async request=>{
     if(request.method!=='GET')return new Response('Método no permitido',{status:405,headers:{...HEADERS,Allow:'GET'}});
     const settings=validConfiguration(env,redirectOrigin);
@@ -182,6 +187,7 @@ export function createGarminCallbackHandler({env=process.env,createClientFn=crea
     const code=url.searchParams.get('code');
     if(!state||!/^[-_A-Za-z0-9]{43}$/.test(state)||url.searchParams.getAll('state').length!==1
       ||url.searchParams.getAll('code').length>1)return finishLanding('cancelled');
+    let stage='state_storage';
     try{
       const service=createService(settings,env,createClientFn);
       const stateHash=sha256(state);
@@ -193,33 +199,43 @@ export function createGarminCallbackHandler({env=process.env,createClientFn=crea
         .select('athlete_id,verifier_ciphertext,redirect_uri'+(syncEnabled(env)?',consent_version':'')).maybeSingle());
       if(!stored||stored.redirect_uri!==settings.redirect_uri)return finishLanding('expired');
       if(url.searchParams.has('error')||!code||code.length>2048)return finishLanding('cancelled');
-      if(syncEnabled(env)&&stored.consent_version!==CONSENT_VERSION)return finishLanding('failed');
+      if(syncEnabled(env)&&stored.consent_version!==CONSENT_VERSION)return finishLanding('failed','consent_changed');
       const finish=async()=>{
+      stage='verifier_decryption';
       const verifier=decryptedSecret(stored.verifier_ciphertext,env.GARMIN_TOKEN_ENCRYPTION_KEY,'pkce:'+stateHash+':'+CONSENT_VERSION);
       const credentials=Buffer.from(env.GARMIN_CLIENT_ID+':'+env.GARMIN_CLIENT_SECRET).toString('base64');
       const body=new URLSearchParams({grant_type:'authorization_code',code,code_verifier:verifier,redirect_uri:settings.redirect_uri});
+      stage='token_network';
       const tokenResponse=await fetcher(TOKEN_URL,{
         method:'POST',redirect:'error',signal:AbortSignal.timeout(8000),headers:{Authorization:'Basic '+credentials,'Content-Type':'application/x-www-form-urlencoded'},
         body:body.toString(),
       });
+      if(!tokenResponse.ok){
+        const issue=[400,401,403,429].includes(tokenResponse.status)?'token_http_'+tokenResponse.status:'token_http_other';
+        return finishLanding('failed',issue);
+      }
+      stage='token_format';
       const token=await responseJson(tokenResponse);
       if(typeof token.access_token!=='string'||typeof token.refresh_token!=='string'
         ||!Number.isFinite(Number(token.expires_in))||!Number.isFinite(Number(token.refresh_token_expires_in)))
-        return finishLanding('failed');
+        return finishLanding('failed','token_format');
+      stage='quota';
       await reserve(service,env,stored.athlete_id);
       await reserve(service,env,stored.athlete_id);
+      stage='identity_permissions';
       const [identity,access]=await Promise.all([
         garminGet(USER_ID_URL,token.access_token,fetcher),
         garminGet(PERMISSIONS_URL,token.access_token,fetcher),
       ]);
       if(typeof identity.userId!=='string'||!/^[-a-zA-Z0-9_]{4,128}$/.test(identity.userId)
-        ||!Array.isArray(access.permissions))return finishLanding('failed');
+        ||!Array.isArray(access.permissions))return finishLanding('failed','identity_permissions');
       const permissions=access.permissions.filter(p=>typeof p==='string'&&/^[A-Z_]{2,60}$/.test(p));
       const now=Date.now();
       // Garmin recommends subtracting at least 600 seconds from expiry.
       const accessSeconds=Math.max(0,Math.min(Number(token.expires_in),86400*7)-600);
       const refreshSeconds=Math.max(0,Math.min(Number(token.refresh_token_expires_in),86400*100)-600);
-      if(accessSeconds<=0||refreshSeconds<=0)return finishLanding('failed');
+      if(accessSeconds<=0||refreshSeconds<=0)return finishLanding('failed','token_format');
+      stage='connection_storage';
       check(await service.from('garmin_connections').upsert({
         athlete_id:stored.athlete_id,garmin_user_id:identity.userId,
         access_token_ciphertext:encryptedSecret(token.access_token,env.GARMIN_TOKEN_ENCRYPTION_KEY,'access:'+stored.athlete_id),
@@ -232,9 +248,11 @@ export function createGarminCallbackHandler({env=process.env,createClientFn=crea
       },{onConflict:'athlete_id'}));
       return finishLanding('connected');
       };
+      stage='quota';
       await reserve(service,env,stored.athlete_id,true);
+      stage='lease';
       return syncEnabled(env)?await withGarminLease(createGarminRepository(env,createClientFn),stored.athlete_id,finish):await finish();
-    }catch{return finishLanding('failed');}
+    }catch{return finishLanding('failed',stage);}
   };
 }
 

@@ -40,6 +40,27 @@ export async function mountGarminPanel({root,client,user,role}){
   details.append(el('p','','Recepción: Activity API · Pendiente de activar las notificaciones y probar la llegada de actividades.'));
   details.append(el('p','','Histórico anterior a la conexión: no incluido en Garmin Starter; requiere otra vía autorizada.'));
   wrap.append(details);
+  const returned=new URL(root.ownerDocument.location.href).searchParams;
+  const notices={expired:'El enlace de autorización anterior caducó. Inicia una conexión nueva; tu sesión Garmin puede seguir abierta.',
+    failed:'Garmin ha devuelto la autorización, pero el servidor no ha podido completar la conexión.',
+    cancelled:'La autorización anterior no se completó.',not_ready:'La configuración del servidor requiere revisión antes de conectar Garmin.'};
+  const issueNotices={token_http_400:'Garmin ha rechazado la solicitud de intercambio del código.',
+    token_http_401:'Garmin ha rechazado la autenticación de la aplicación. Hay que revisar su Client Secret existente.',
+    token_http_403:'Garmin ha denegado el intercambio de autorización de la aplicación.',
+    token_http_429:'Garmin ha indicado un límite temporal de solicitudes.',
+    token_http_other:'Garmin no ha podido completar el intercambio de autorización.',
+    token_network:'No se pudo completar la comunicación del servidor con Garmin.',
+    token_format:'La respuesta de autorización Garmin no tiene el formato esperado.',
+    verifier_decryption:'No se pudo recuperar el estado cifrado de esta autorización.',
+    identity_permissions:'No se pudieron comprobar la identidad y los permisos oficiales de Garmin.',
+    connection_storage:'No se pudo guardar la conexión de forma segura.',
+    quota:'La autorización está temporalmente limitada.',lease:'Otra operación de sincronización o su bloqueo requiere revisión.',
+    state_storage:'No se pudo comprobar el estado de autorización.',consent_changed:'La versión de consentimiento cambió; inicia una conexión nueva.'};
+  const returnedStatus=returned.get('garmin'),issue=returned.get('issue');
+  if(Object.hasOwn(notices,returnedStatus)){
+    const message=notices[returnedStatus]+(returnedStatus==='failed'&&Object.hasOwn(issueNotices,issue)?' '+issueNotices[issue]:'');
+    note(wrap,message);
+  }
   const status=note(wrap,'Comprobando disponibilidad de la conexión…');
   root.append(wrap);
   if(role!=='athlete'){
