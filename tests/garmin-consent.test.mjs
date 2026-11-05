@@ -55,6 +55,27 @@ test('malformed consent payload returns a client error and stores no OAuth state
   const malformed=new Request(request.url,{method:'POST',headers:request.headers,body:'{bad json'});
   assert.equal((await f.start(malformed)).status,400);assert.equal(f.queries,0);
 });
+for(const error of ['invalid_client','unauthorized_client','invalid_grant','invalid_request','private-fixture-unknown'])
+test('provider errors expose only fixed enums, never descriptions: '+error,async()=>{
+  const f=setup({fetcher:async()=>Response.json({error,error_description:'private-fixture-description',access_token:'private-fixture-token'},{status:401})});
+  const authorization=new URL((await(await f.start(f.request({consent:true}))).json()).authorization_url);
+  const url=new URL(f.env.GARMIN_REDIRECT_URI);
+  url.searchParams.set('state',authorization.searchParams.get('state'));url.searchParams.set('code','private-fixture-code');
+  const response=await f.callback(new Request(url));
+  const location=response.headers.get('location'),landing=new URL(location);
+  assert.equal(landing.searchParams.get('issue'),error==='private-fixture-unknown'?'token_http_401':'token_'+error);
+  assert.doesNotMatch(location,/private-fixture|error_description|access_token/);
+  assert.equal(f.providerCalls,1);
+});
+test('oversized provider error is discarded without exposing its body',async()=>{
+  const f=setup({fetcher:async()=>Response.json({error:'invalid_client',error_description:'private-fixture'.repeat(1000)},{status:401})});
+  const authorization=new URL((await(await f.start(f.request({consent:true}))).json()).authorization_url);
+  const url=new URL(f.env.GARMIN_REDIRECT_URI);
+  url.searchParams.set('state',authorization.searchParams.get('state'));url.searchParams.set('code','private-fixture-code');
+  const location=(await f.callback(new Request(url))).headers.get('location');
+  assert.equal(new URL(location).searchParams.get('issue'),'token_http_401');
+  assert.doesNotMatch(location,/private-fixture/);
+});
 test('denial consumes a valid state, does not contact Garmin and cannot be replayed',async()=>{
   const f=setup(),start=await f.start(f.request({consent:true}));
   const authorization=new URL((await start.json()).authorization_url);

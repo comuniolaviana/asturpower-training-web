@@ -117,7 +117,22 @@ async function garminGet(url,token,fetcher=fetch){
 }
 const CALLBACK_ISSUES=new Set(['state_storage','consent_changed','verifier_decryption','token_network',
   'token_http_400','token_http_401','token_http_403','token_http_429','token_http_other','token_redirect','token_format',
+  'token_invalid_client','token_unauthorized_client','token_invalid_grant','token_invalid_request','token_http_401_html',
   'identity_permissions','connection_storage','quota','lease']);
+async function tokenFailureIssue(response){
+  if(response.status>=300&&response.status<400)return 'token_redirect';
+  const fallback=[400,401,403,429].includes(response.status)?'token_http_'+response.status:'token_http_other';
+  const type=response.headers?.get('content-type')||'';
+  if(response.status===401&&type.split(';')[0].trim()==='text/html')return 'token_http_401_html';
+  if(type.split(';')[0].trim()!=='application/json')return fallback;
+  try{
+    // Parse at most 4 KiB in server memory. Never return/log descriptions,
+    // response bodies, headers or arbitrary error strings from the provider.
+    const body=await boundedJson(response,4096);
+    const known=new Set(['invalid_client','unauthorized_client','invalid_grant','invalid_request']);
+    return known.has(body?.error)?'token_'+body.error:fallback;
+  }catch{return fallback;}
+}
 function landing(status,redirectOrigin=NETLIFY_ORIGIN,issue){
   const url=new URL(OAUTH_ORIGINS.has(redirectOrigin)?redirectOrigin:NETLIFY_ORIGIN);
   url.searchParams.set('garmin',status);
@@ -213,9 +228,7 @@ export function createGarminCallbackHandler({env=process.env,createClientFn=crea
         body:body.toString(),
       });
       if(!tokenResponse.ok){
-        if(tokenResponse.status>=300&&tokenResponse.status<400)return finishLanding('failed','token_redirect');
-        const issue=[400,401,403,429].includes(tokenResponse.status)?'token_http_'+tokenResponse.status:'token_http_other';
-        return finishLanding('failed',issue);
+        return finishLanding('failed',await tokenFailureIssue(tokenResponse));
       }
       stage='token_format';
       const token=await responseJson(tokenResponse);

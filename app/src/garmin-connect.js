@@ -46,6 +46,11 @@ export async function mountGarminPanel({root,client,user,role}){
     cancelled:'La autorización anterior no se completó.',not_ready:'La configuración del servidor requiere revisión antes de conectar Garmin.'};
   const issueNotices={token_http_400:'Garmin ha rechazado la solicitud de intercambio del código.',
     token_http_401:'Garmin ha rechazado la autenticación de la aplicación. Hay que revisar su Client Secret existente.',
+    token_invalid_client:'Garmin identifica el rechazo como invalid_client: no acepta la autenticación de esta aplicación.',
+    token_unauthorized_client:'Garmin identifica la aplicación como no autorizada para este intercambio.',
+    token_invalid_grant:'Garmin rechaza el código de autorización o su comprobación PKCE.',
+    token_invalid_request:'Garmin rechaza el formato de la solicitud de autorización.',
+    token_http_401_html:'El endpoint Garmin ha devuelto una página HTML con estado 401; requiere revisar el acceso al servicio.',
     token_http_403:'Garmin ha denegado el intercambio de autorización de la aplicación.',
     token_http_429:'Garmin ha indicado un límite temporal de solicitudes.',
     token_http_other:'Garmin no ha podido completar el intercambio de autorización.',

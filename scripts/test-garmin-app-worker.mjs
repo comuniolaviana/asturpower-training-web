@@ -94,7 +94,7 @@ const oauthRuntime=new Miniflare({...convertV4MiniflareOptions({
     const url=new URL(request.url);providerRequests.push(url.origin+url.pathname);
     if(url.origin==='https://diauth.garmin.com'&&url.pathname==='/di-oauth2-service/oauth/token'){
       assert.equal(request.method,'POST');
-      assert.match(request.headers.get('authorization'),/^Basic /);
+      assert.equal(request.headers.get('authorization'),'Basic '+Buffer.from('fixture-client-id:fixture-client-secret').toString('base64'));
       if(providerStatus!==200)return new Response(null,{status:providerStatus,headers:{Location:'https://must-not-be-followed.invalid/'}});
       return Response.json({access_token:'fictional-access',refresh_token:'fictional-refresh',expires_in:86400,refresh_token_expires_in:7775998});
     }
