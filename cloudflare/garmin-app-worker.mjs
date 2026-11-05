@@ -16,6 +16,14 @@ const HEADERS={
   'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://drnefgxdrultneeodtsy.supabase.co; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 };
 const json=(body,status)=>Response.json(body,{status});
+// Fixed categories only: never return a value, prefix, suffix, length or exception.
+function configurationProblem(value){
+  if(value===undefined||value===null||value==='')return 'missing';
+  if(typeof value!=='string')return 'invalid_binding_type';
+  if(/[*\u2022\u25cf]/.test(value))return 'masked_value';
+  if(value.trim()!==value)return 'surrounding_whitespace';
+  return 'invalid_format';
+}
 function protect(response){
   const headers=new Headers(response.headers);
   for(const [name,value] of Object.entries(HEADERS))headers.set(name,value);
@@ -36,7 +44,9 @@ export function createAppWorker(dependencies={}){
           if(env.SUPABASE_URL!==SUPABASE_URL&&!issues.includes('SUPABASE_URL'))issues.push('SUPABASE_URL');
           return protect(json({service:'asturpower-garmin-app',
             enabled:env.ASTURPOWER_GARMIN_ACTIVITY_ENABLED==='true',
-            configuration_format_ready:issues.length===0,configuration_invalid_fields:issues},200));
+            configuration_format_ready:issues.length===0,configuration_invalid_fields:issues,
+            configuration_problem_types:Object.fromEntries(issues.map(name=>[name,configurationProblem(env[name])])),
+            diagnostic_version:2},200));
         }
         if(url.pathname==='/garmin/activities'){
           if(env.SUPABASE_URL!==SUPABASE_URL)return protect(json({error:'app_not_configured'},503));

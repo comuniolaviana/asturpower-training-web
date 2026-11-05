@@ -13,16 +13,31 @@ test('Cloudflare readiness checks format without exposing values or enabling OAu
   const worker=createAppWorker({verify:()=>{throw new Error('Must not access user data');},
     fetcher:()=>{throw new Error('Must not contact Garmin');}});
   const result=await worker.fetch(request('/health'),env);
-  assert.deepEqual(await result.json(),{service:'asturpower-garmin-app',enabled:false,configuration_format_ready:true,configuration_invalid_fields:[]});
+  assert.deepEqual(await result.json(),{service:'asturpower-garmin-app',enabled:false,configuration_format_ready:true,configuration_invalid_fields:[],configuration_problem_types:{},diagnostic_version:2});
   for(const name of ['SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY','SUPABASE_SECRET_KEY','GARMIN_CLIENT_ID','GARMIN_CLIENT_SECRET','GARMIN_TOKEN_ENCRYPTION_KEY','GARMIN_REDIRECT_URI']){
     const response=await worker.fetch(request('/health'),{...env,[name]:''});
     const body=await response.json();
     assert.equal(body.configuration_format_ready,false,name);
     assert.deepEqual(body.configuration_invalid_fields,[name]);
+    assert.deepEqual(body.configuration_problem_types,{[name]:'missing'});
   }
   assert.equal((await worker.fetch(request('/health',{method:'POST'}),env)).status,405);
   assert.equal((await worker.fetch(request('/.netlify/functions/garmin-start',{method:'POST'}),env)).status,503);
   assert.equal((await worker.fetch(request('/.netlify/functions/public-config'),env)).status,503);
+});
+test('Cloudflare diagnostic categories distinguish masked and malformed input without returning it',async()=>{
+  const env={...garminFixture().env,...project,GARMIN_REDIRECT_URI:APP_ORIGIN+'/.netlify/functions/garmin-callback',ASTURPOWER_APP_ENABLED:'false',ASTURPOWER_GARMIN_ENABLED:'false'};
+  for(const name of ['SUPABASE_SECRET_KEY','GARMIN_CLIENT_ID','GARMIN_TOKEN_ENCRYPTION_KEY']){
+    for(const value of ['********private-marker','\u2022\u2022\u2022\u2022private-marker','invalid:private-marker']){
+      const response=await createAppWorker().fetch(request('/health'),{...env,[name]:value});
+      const text=await response.text(),body=JSON.parse(text);
+      assert.deepEqual(body.configuration_invalid_fields,[name]);
+      assert.deepEqual(body.configuration_problem_types,{[name]:value.startsWith('invalid:')?'invalid_format':'masked_value'});
+      assert.doesNotMatch(text,/private-marker/);
+    }
+  }
+  const response=await createAppWorker().fetch(request('/health'),{...env,SUPABASE_SECRET_KEY:' '+env.SUPABASE_SECRET_KEY+'\n'});
+  assert.deepEqual((await response.json()).configuration_problem_types,{SUPABASE_SECRET_KEY:'surrounding_whitespace'});
 });
 test('Cloudflare app refuses another project and unknown server routes without network',async()=>{
   const worker=createAppWorker();
