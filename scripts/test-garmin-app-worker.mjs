@@ -2,7 +2,7 @@
 // All external network requests are denied. No deployed account is accessed.
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 const origin='https://asturpower-garmin-dev.asturpower-training.workers.dev';
 let networkRequests=0;
@@ -26,6 +26,13 @@ try{
   const js=await runtime.dispatchFetch(origin+script);
   assert.equal(js.status,200);
   assert.match(js.headers.get('content-type'),/javascript/);
+  const workerAsset=(await readdir(new URL('../.wrangler/garmin-app-assets/assets/',import.meta.url)))
+    .find(name=>/^garmin-full-fit-worker-.*\.js$/.test(name));
+  assert.ok(workerAsset,'full FIT reader must be bundled as a same-origin Worker');
+  const fitWorker=await runtime.dispatchFetch(origin+'/assets/'+workerAsset);
+  assert.equal(fitWorker.status,200);
+  assert.match(fitWorker.headers.get('content-type'),/javascript/);
+  assert.match(fitWorker.headers.get('content-security-policy'),/script-src 'self'/);
   const privacy=await runtime.dispatchFetch(origin+'/privacidad-garmin.html');
   assert.equal(privacy.status,200);
   assert.match(privacy.headers.get('content-type'),/text\/html/);
@@ -53,7 +60,7 @@ try{
     configuration_invalid_fields:['SUPABASE_PUBLISHABLE_KEY','SUPABASE_SECRET_KEY','GARMIN_CLIENT_ID','GARMIN_CLIENT_SECRET','GARMIN_TOKEN_ENCRYPTION_KEY','GARMIN_REDIRECT_URI'],
     configuration_problem_types:{SUPABASE_PUBLISHABLE_KEY:'missing',SUPABASE_SECRET_KEY:'missing',GARMIN_CLIENT_ID:'missing',GARMIN_CLIENT_SECRET:'missing',GARMIN_TOKEN_ENCRYPTION_KEY:'missing',GARMIN_REDIRECT_URI:'missing'},diagnostic_version:2});
   assert.equal(networkRequests,0);
-  console.log(JSON.stringify({runtime:'local workerd + real Vite assets',scenarios:13,
+  console.log(JSON.stringify({runtime:'local workerd + real Vite assets',scenarios:14,
     external_requests:networkRequests,real_garmin_connection:false,production_deployment:false},null,2));
 }finally{await runtime.dispose();}
 

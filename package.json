@@ -16,6 +16,7 @@
     "build:garmin:cloudflare:app": "npm run build && node scripts/prepare-garmin-app-assets.mjs"
   },
   "dependencies": {
+    "@garmin/fitsdk": "21.221.0",
     "@supabase/supabase-js": "2.118.0"
   },
   "devDependencies": {

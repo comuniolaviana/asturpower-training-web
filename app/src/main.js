@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { mountApp, showUnavailable } from './ui.js';
 import './style.css';
 import './garmin-connect.css';
+import './garmin-original.css';
 import './planning.css';
 
 const root = document.querySelector('#app');

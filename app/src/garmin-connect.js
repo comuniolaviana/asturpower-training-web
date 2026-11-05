@@ -1,5 +1,6 @@
 // Garmin Connect: interfaz del deportista. Los secretos se gestionan exclusivamente en Netlify Functions.
 import { loadGarminActivities } from './garmin-api.js';
+import { mountOriginalVault } from './garmin-original-ui.js';
 const el=(tag,cls,content)=>{
   const node=document.createElement(tag);
   if(cls)node.className=cls;
@@ -34,11 +35,11 @@ export async function mountGarminPanel({root,client,user,role}){
   root.replaceChildren();
   const wrap=el('section','garmin-module');
   wrap.append(el('h2','','Garmin Connect'));
-  wrap.append(el('p','','AsturPower puede planificar entrenamientos; la integración oficial con Garmin se está preparando para sincronizarlos y recibir actividades.'));
+  wrap.append(el('p','','Conecta Garmin para recibir actividades y enviar tus sesiones de entrenamiento. Puedes conservar también tus archivos originales completos.'));
   const details=el('div','garmin-overview');
-  details.append(el('p','','Envío: Training API · Acceso autorizado por Garmin. Pendiente de prueba real con un dispositivo compatible.'));
-  details.append(el('p','','Recepción: Activity API · Pendiente de activar las notificaciones y probar la llegada de actividades.'));
-  details.append(el('p','','Histórico anterior a la conexión: no incluido en Garmin Starter; requiere otra vía autorizada.'));
+  details.append(el('p','','Entrenamientos: envía las sesiones estructuradas desde tu calendario y sincroniza tu dispositivo.'));
+  details.append(el('p','','Actividades nuevas: la recepción actual guarda resúmenes. La captura automática de FIT completos está pendiente de preparar y verificar.'));
+  details.append(el('p','','Historial anterior: Garmin Starter no incluye su descarga automática. Solicita la exportación oficial para conservar el original completo.'));
   wrap.append(details);
   const returned=new URL(root.ownerDocument.location.href).searchParams;
   const notices={expired:'El enlace de autorización anterior caducó. Inicia una conexión nueva; tu sesión Garmin puede seguir abierta.',
@@ -74,6 +75,8 @@ export async function mountGarminPanel({root,client,user,role}){
     return;
   }
   let result;
+  const originalRoot=el('div');wrap.append(originalRoot);
+  mountOriginalVault({root:originalRoot,client,user,role});
   try{result=await request(client,'garmin-status');}
   catch(error){if(root.isConnected)status.textContent=error.message;return;}
   if(!root.isConnected)return;
