@@ -38,7 +38,8 @@ try{
   assert.equal((await runtime.dispatchFetch(origin+'/garmin/activities',{method:'POST',body:'{}'})).status,503);
   assert.equal((await runtime.dispatchFetch('https://foreign.invalid/health')).status,421);
   const health=await runtime.dispatchFetch(origin+'/health');
-  assert.deepEqual(await health.json(),{service:'asturpower-garmin-app',enabled:false,configuration_format_ready:false});
+  assert.deepEqual(await health.json(),{service:'asturpower-garmin-app',enabled:false,configuration_format_ready:false,
+    configuration_invalid_fields:['SUPABASE_PUBLISHABLE_KEY','SUPABASE_SECRET_KEY','GARMIN_CLIENT_ID','GARMIN_CLIENT_SECRET','GARMIN_TOKEN_ENCRYPTION_KEY','GARMIN_REDIRECT_URI']});
   assert.equal(networkRequests,0);
   console.log(JSON.stringify({runtime:'local workerd + real Vite assets',scenarios:11,
     external_requests:networkRequests,real_garmin_connection:false,production_deployment:false},null,2));

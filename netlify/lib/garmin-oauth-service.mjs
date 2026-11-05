@@ -59,20 +59,27 @@ export function decryptedSecret(value,keyText,context){
 const NETLIFY_ORIGIN='https://asturpower-training-dev.netlify.app';
 // Only explicit server-side adapters can select the reviewed staging origin.
 const OAUTH_ORIGINS=new Set([NETLIFY_ORIGIN,'https://asturpower-garmin-dev.asturpower-training.workers.dev']);
-const configuration = (env,redirectOrigin=NETLIFY_ORIGIN)=>{
-  const config=resolvePublicConfig(env,{requireEnabled:false});
-  const url=env.GARMIN_REDIRECT_URI;
+// Diagnostic output is restricted to fixed field names, never values or exceptions.
+export function garminConfigurationIssues(env,redirectOrigin=NETLIFY_ORIGIN){
+  const issues=[];
+  if(!resolvePublicConfig(env,{requireEnabled:false})){
+    if(!resolvePublicConfig({...env,SUPABASE_PUBLISHABLE_KEY:'sb_publishable_format_check'},{requireEnabled:false}))issues.push('SUPABASE_URL');
+    if(!/^sb_publishable_[A-Za-z0-9_-]+$/.test(env.SUPABASE_PUBLISHABLE_KEY||''))issues.push('SUPABASE_PUBLISHABLE_KEY');
+  }
+  if(!/^sb_secret_[A-Za-z0-9_-]+$/.test(env.SUPABASE_SECRET_KEY||''))issues.push('SUPABASE_SECRET_KEY');
+  if(!/^[-a-zA-Z0-9_]{8,128}$/.test(env.GARMIN_CLIENT_ID||''))issues.push('GARMIN_CLIENT_ID');
+  if(!env.GARMIN_CLIENT_SECRET||env.GARMIN_CLIENT_SECRET.length<8)issues.push('GARMIN_CLIENT_SECRET');
+  if(Buffer.from(env.GARMIN_TOKEN_ENCRYPTION_KEY||'','base64url').length!==32)issues.push('GARMIN_TOKEN_ENCRYPTION_KEY');
   let redirect;
-  try{redirect=new URL(url);}catch{return null;}
-  if(!config
-    ||!/^sb_secret_[A-Za-z0-9_-]+$/.test(env.SUPABASE_SECRET_KEY||'')
-    ||!/^[-a-zA-Z0-9_]{8,128}$/.test(env.GARMIN_CLIENT_ID||'')
-    ||!env.GARMIN_CLIENT_SECRET||env.GARMIN_CLIENT_SECRET.length<8
-    ||Buffer.from(env.GARMIN_TOKEN_ENCRYPTION_KEY||'','base64url').length!==32
-    ||!OAUTH_ORIGINS.has(redirectOrigin)||redirect.origin!==redirectOrigin
+  try{redirect=new URL(env.GARMIN_REDIRECT_URI);}catch{}
+  if(!redirect||!OAUTH_ORIGINS.has(redirectOrigin)||redirect.origin!==redirectOrigin
     ||redirect.pathname!=='/.netlify/functions/garmin-callback'
-    ||redirect.search||redirect.hash||redirect.username||redirect.password) return null;
-  return {config,redirect_uri:redirect.toString()};
+    ||redirect.search||redirect.hash||redirect.username||redirect.password)issues.push('GARMIN_REDIRECT_URI');
+  return issues;
+}
+const configuration = (env,redirectOrigin=NETLIFY_ORIGIN)=>{
+  if(garminConfigurationIssues(env,redirectOrigin).length)return null;
+  return {config:resolvePublicConfig(env,{requireEnabled:false}),redirect_uri:new URL(env.GARMIN_REDIRECT_URI).toString()};
 };
 // Syntax only: no provider call, credentials returned, or module activation.
 export const isGarminConfigurationReady=(env,redirectOrigin=NETLIFY_ORIGIN)=>Boolean(configuration(env,redirectOrigin));

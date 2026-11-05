@@ -13,10 +13,12 @@ test('Cloudflare readiness checks format without exposing values or enabling OAu
   const worker=createAppWorker({verify:()=>{throw new Error('Must not access user data');},
     fetcher:()=>{throw new Error('Must not contact Garmin');}});
   const result=await worker.fetch(request('/health'),env);
-  assert.deepEqual(await result.json(),{service:'asturpower-garmin-app',enabled:false,configuration_format_ready:true});
+  assert.deepEqual(await result.json(),{service:'asturpower-garmin-app',enabled:false,configuration_format_ready:true,configuration_invalid_fields:[]});
   for(const name of ['SUPABASE_URL','SUPABASE_PUBLISHABLE_KEY','SUPABASE_SECRET_KEY','GARMIN_CLIENT_ID','GARMIN_CLIENT_SECRET','GARMIN_TOKEN_ENCRYPTION_KEY','GARMIN_REDIRECT_URI']){
     const response=await worker.fetch(request('/health'),{...env,[name]:''});
-    assert.equal((await response.json()).configuration_format_ready,false,name);
+    const body=await response.json();
+    assert.equal(body.configuration_format_ready,false,name);
+    assert.deepEqual(body.configuration_invalid_fields,[name]);
   }
   assert.equal((await worker.fetch(request('/health',{method:'POST'}),env)).status,405);
   assert.equal((await worker.fetch(request('/.netlify/functions/garmin-start',{method:'POST'}),env)).status,503);
