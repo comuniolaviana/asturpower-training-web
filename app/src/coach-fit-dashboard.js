@@ -54,8 +54,8 @@ function chart(root,items){
 }
 export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
  const doc=root.ownerDocument;
- root.innerHTML=`<section class="perf-card"><span class="eyebrow">DATOS REALES DE GARMIN</span><h3>Análisis completo por deportista</h3>
- <p>Historial de actividades, potencia normalizada, cobertura de medición, FTP histórico y TSS. El deportista debe autorizar en Garmin el acceso a las métricas FIT. Los archivos originales y las rutas GPS permanecen privados.</p>
+ root.innerHTML=`<section class="perf-card"><span class="eyebrow">DATOS REALES DE GARMIN</span><h3>Historial y métricas FIT por deportista</h3>
+ <p>Historial de actividades, potencia normalizada, cobertura de medición, FTP histórico y TSS. El deportista debe autorizar en Garmin el acceso a las métricas FIT. Por ahora se muestran resúmenes deportivos y la evolución de NP, no las series completas segundo a segundo. Los archivos originales y las rutas GPS permanecen privados.</p>
  <label class="perf-field"><span>Elegir deportista</span><select data-detailed-athlete><option value="">Selecciona un deportista</option>
  ${athletes.map(a=>`<option value="${esc(a.user_id)}">${esc(a.display_name)}</option>`).join('')}</select></label>
  <p data-detailed-status role="status" aria-live="polite">Selecciona a un deportista para revisar su historial real.</p>
