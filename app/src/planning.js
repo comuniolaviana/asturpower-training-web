@@ -3,6 +3,7 @@
 import { validateSteps, stepsTotalSeconds, describeStep } from './structured-steps.js';
 import { createStepsEditor } from './structured-steps-ui.js';
 import { publishWorkoutToGarmin } from './garmin-api.js';
+import { resolveHistoricalTss } from './garmin-fit-analysis.js';
 const SPORTS = { cycling: 'Ciclismo', running: 'Carrera', swimming: 'Natación', strength: 'Fuerza', other: 'Otro' };
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
@@ -131,10 +132,16 @@ export async function mountPlanner({root,client,user,role}) {
        // FIT original analysis is private to the owner. Its absence or failure
        // must not hide any planned or previously imported activities.
        try{
-        const detailed=await client.from('garmin_fit_analysis')
-         .select('activity_id,normalized_power_watts,intensity_factor,tss,power_coverage')
-         .eq('athlete_id',user.id).gte('fit_started_at',firstUtc).lt('fit_started_at',lastUtc).limit(1000);
-        if(!detailed.error&&Array.isArray(detailed.data))fitMetrics=new Map(detailed.data.map(m=>[m.activity_id,m]));
+        const [detailed,ftpHistory]=await Promise.all([
+         client.from('garmin_fit_analysis')
+          .select('activity_id,sport,fit_started_at,duration_seconds,normalized_power_watts,power_coverage')
+          .eq('athlete_id',user.id).gte('fit_started_at',firstUtc).lt('fit_started_at',lastUtc).limit(1000),
+         client.from('athlete_physiology')
+          .select('sport,effective_date,ftp,created_at').eq('athlete_id',user.id)
+          .eq('sport','cycling').order('effective_date',{ascending:false}).limit(500)
+        ]);
+        if(!detailed.error&&!ftpHistory.error&&Array.isArray(detailed.data))
+         fitMetrics=new Map(detailed.data.map(m=>[m.activity_id,resolveHistoricalTss(m,ftpHistory.data||[])]));
        }catch{}
       }
       athletes=[];
