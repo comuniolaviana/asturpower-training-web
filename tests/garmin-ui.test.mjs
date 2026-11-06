@@ -10,9 +10,9 @@ test('calendar sends the selected workout through the authenticated backend and 
   globalThis.document=dom.window.document;
   const fixture=garminFixture(),workout={...fixture.workout,scheduled_date:isoDate(new Date()),duration_minutes:35};
   const client={auth:{getSession:async()=>({data:{session:{access_token:'simulated-session'}}})},from(table){
-    const result=table==='planned_workouts'?[workout]:table==='coach_athletes'?[{athlete_id:IDs.athlete}]:[{user_id:IDs.athlete,display_name:'Ciclista ficticio'}];
+    const result=table==='planned_workouts'?[workout]:table==='coach_athletes'?[{athlete_id:IDs.athlete}]:table==='activities'?[]:[{user_id:IDs.athlete,display_name:'Ciclista ficticio'}];
     const builder={select(){return this;},eq(){return this;},in(){return this;},gte(){return this;},lt(){return this;},
-      order(){return this;},then(resolve){return Promise.resolve({data:result,error:null}).then(resolve);}};
+      order(){return this;},limit(){return this;},then(resolve){return Promise.resolve({data:result,error:null}).then(resolve);}};
     return builder;
   }};
   let requested;
@@ -30,10 +30,10 @@ test('calendar sends the selected workout through the authenticated backend and 
     assert.doesNotMatch(root.textContent,/simulated-session/);assert.equal(send.disabled,false);
   }finally{globalThis.document=previousDocument;globalThis.fetch=previousFetch;dom.window.close();}
 });
-test('activity listing filters own athlete and official source and requests only summary fields',async()=>{
-  const calls=[],builder={select(fields){calls.push(fields);return this;},eq(...args){calls.push(args);return this;},
+test('activity listing filters own athlete and both authorized Garmin sources and requests only summary fields',async()=>{
+  const calls=[],builder={select(fields){calls.push(fields);return this;},eq(...args){calls.push(args);return this;},in(...args){calls.push(args);return this;},
     order(){return this;},limit(n){assert.equal(n,10);return Promise.resolve({data:[],error:null});}};
   await loadGarminActivities({from(table){assert.equal(table,'activities');return builder;}},IDs.athlete);
-  assert.deepEqual(calls.slice(1),[['athlete_id',IDs.athlete],['source','garmin_api']]);
+  assert.deepEqual(calls.slice(1),[['athlete_id',IDs.athlete],['source',['garmin_api','garmin_export']]]);
   assert.doesNotMatch(calls[0],/token|latitude|longitude|ciphertext/);
 });
