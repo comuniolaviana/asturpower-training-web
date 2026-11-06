@@ -74,7 +74,7 @@ export function renderSportSeries(root,data,{ftp=null,bounds=null}={}){
  for(const [label,value,unit,factor] of [['Tiempo en movimiento',session.totalMovingTime,' min',1/60],['Tiempo transcurrido',session.totalElapsedTime,' min',1/60],['Velocidad media',session.enhancedAvgSpeed??session.avgSpeed,' km/h',3.6],['Velocidad máxima',session.enhancedMaxSpeed??session.maxSpeed,' km/h',3.6],['Pulso máximo',session.maxHeartRate,' lpm',1],['Potencia máxima',session.maxPower,' W',1],['Cadencia media',session.avgCadence,' rpm',1],['Cadencia máxima',session.maxCadence,' rpm',1],['Calorías',session.totalCalories,' kcal',1],['Trabajo',session.totalWork,' kJ',1/1000],['Temperatura media',session.avgTemperature,' °C',1],['Ascenso',session.totalAscent,' m',1],['Descenso',session.totalDescent,' m',1]]){
   if(typeof value!=='number'||!Number.isFinite(value))continue;const box=el('div');box.append(el('dt',label),el('dd',format(value,unit,factor)));extra.append(box);
  }if(extra.childElementCount)root.append(el('h3','Más datos de la sesión'),extra);
- const charts=el('div');root.append(charts);mountFitCharts(charts,chartPreview(records));
+ const charts=el('div');root.append(charts);mountFitCharts(charts,chartPreview(records),{records,startTime:data.sessions?.[0]?.startTime});
  const note=charts.querySelector('.garmin-fit-chart-note');if(note)note.textContent='El dibujo conserva los extremos y simplifica puntos. La tabla contiene todos los registros y marcas de tiempo de las series deportivas compartidas.';
  if(ftp&&bounds){
   const zones=Array(bounds.length+1).fill(0);let missing=0;

@@ -55,3 +55,5 @@
 .ap-steps-actions{margin-top:12px;}
 .ap-step-total{margin:12px 0 0;color:#34543d;font-size:.86rem;font-weight:600;}
 @media(max-width:520px){.ap-step-fields{grid-template-columns:minmax(0,1fr)}}
+
+.activity-inspector{border:1px solid #dce5d8;border-radius:12px;background:#f5f9ef;padding:16px;margin:18px 0}.activity-inspector>div{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.activity-inspector input[type=range]{flex:1;min-width:160px;min-height:44px;accent-color:#087b5d}.activity-inspector label{display:flex;align-items:center;gap:10px;font-size:.85rem}.activity-inspector input[type=number]{width:90px;min-height:44px;border:1px solid #b9cbbd;border-radius:8px;padding:8px;font:inherit}.activity-inspector p[role=status]{font-weight:600;line-height:1.8}.garmin-fit-chart{touch-action:pan-y}
