@@ -1,5 +1,6 @@
 import {uploadOriginal,listOriginals,downloadOriginal} from './garmin-original-vault.js';
 import {mountOriginalViewer} from './garmin-original-viewer.js';
+import {mountGarminHistoryImport} from './garmin-history-ui.js';
 export function mountOriginalVault({root,client,user,role}){
  if(!root||role!=='athlete'||!user?.id)return ()=>{};
  const doc=root.ownerDocument;
@@ -18,6 +19,8 @@ export function mountOriginalVault({root,client,user,role}){
  const viewerRoot=node('div'),viewer=mountOriginalViewer(viewerRoot);
  wrap.append(pickLabel,consent,send,cancel,inspect,status,refresh,list,viewerRoot);root.append(wrap);
  let file=null,busy=false,disposed=false,controller=null,epoch=0;
+ const importDisposers=[];
+ const stopImports=()=>{for(const dispose of importDisposers.splice(0))dispose();};
  const alive=()=>!disposed&&wrap.isConnected;
  function message(text){if(alive())status.textContent=text;}
  function lock(value){busy=value;input.disabled=value;check.disabled=value;send.disabled=value||!file||!check.checked;inspect.disabled=value||!file;refresh.disabled=value;cancel.hidden=!value;cancel.disabled=false;}
@@ -28,7 +31,7 @@ export function mountOriginalVault({root,client,user,role}){
  async function reload(){
   const ticket=++epoch;
   try{
-   const rows=await listOriginals(client,user.id);if(!alive()||ticket!==epoch)return;list.replaceChildren();
+   const rows=await listOriginals(client,user.id);if(!alive()||ticket!==epoch)return;stopImports();list.replaceChildren();
    if(!rows.length)list.append(node('p','Todavía no hay originales guardados.'));
    for(const row of rows){
     const card=node('article',undefined,'garmin-activity');card.append(node('strong',row.filename));
@@ -61,7 +64,12 @@ export function mountOriginalVault({root,client,user,role}){
        finally{controller=null;if(alive())lock(false);}
       });card.append(explore);
      }
-    }list.append(card);
+    }
+    if(row.status==='ready'&&/\.zip$/i.test(row.filename)){
+     const importRoot=node('div',undefined,'garmin-history-import');card.append(importRoot);
+     importDisposers.push(mountGarminHistoryImport({root:importRoot,client,ownerId:user.id,archiveId:row.archive_id}));
+    }
+    list.append(card);
    }
   }catch{if(alive()&&ticket===epoch)message('No se pudieron consultar los originales. Comprueba tu sesión y pulsa Actualizar originales.');}
  }
@@ -74,7 +82,7 @@ export function mountOriginalVault({root,client,user,role}){
   finally{controller=null;if(alive())lock(false);}
  });
  cancel.addEventListener('click',()=>{controller?.abort();cancel.disabled=true;});refresh.addEventListener('click',()=>void reload());
- const observer=new doc.defaultView.MutationObserver(()=>{if(!wrap.isConnected){disposed=true;controller?.abort();viewer.dispose();observer.disconnect();}});
+ const observer=new doc.defaultView.MutationObserver(()=>{if(!wrap.isConnected){disposed=true;controller?.abort();viewer.dispose();stopImports();observer.disconnect();}});
  observer.observe(doc,{subtree:true,childList:true});void reload();
- return ()=>{disposed=true;controller?.abort();viewer.dispose();observer.disconnect();};
+ return ()=>{disposed=true;controller?.abort();viewer.dispose();stopImports();observer.disconnect();};
 }
