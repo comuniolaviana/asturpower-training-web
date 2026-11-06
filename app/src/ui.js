@@ -244,16 +244,24 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   root.addEventListener('click', onClick);
   root.addEventListener('submit', onTeamSubmit);
   root.addEventListener('change', onWorkspaceChange);
+  const importingHistory = () => Boolean(root.querySelector('[data-garmin-import-running="true"]'));
   const { data: authListener } = client.auth.onAuthStateChange((event, session) => {
     if (disposed) return;
     if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
       ++epoch; user = null; data = null; query = ''; view = 'overview'; preferredRole = null; login();
     } else if (['SIGNED_IN', 'INITIAL_SESSION', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
+      // A routine same-account refresh must not destroy the running importer.
+      // Sign-out, account changes and explicit user updates still refresh immediately.
+      if (!ignoreSession && user?.id && session?.user?.id === user.id &&
+          ['SIGNED_IN', 'TOKEN_REFRESHED'].includes(event) && importingHistory()) {
+        user = session.user;
+        return;
+      }
       // Auth callbacks must remain synchronous; SDK requests run outside their lock.
       setTimeout(() => { if (!disposed) void sync(); }, 0);
     }
   });
-  const onVisibility = () => { if (root.ownerDocument.visibilityState === 'visible' && user) void sync(); };
+  const onVisibility = () => { if (root.ownerDocument.visibilityState === 'visible' && user && !importingHistory()) void sync(); };
   root.ownerDocument.addEventListener('visibilitychange', onVisibility);
   loading();
   // Makes startup independent of whether the SDK already emitted INITIAL_SESSION.

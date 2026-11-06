@@ -42,7 +42,7 @@ export function mountHistoryHub({root,client,user,onCalendar}){
  details.append(selected,input,consent,start,cancel,progress);section.append(details);root.append(section);
  let archive=null,file=null,busy=false,closed=false,controller=null;
  const live=()=>!closed&&section.isConnected;
- const lock=()=>{input.disabled=check.disabled=busy;start.disabled=busy||!check.checked||(!file&&!archive);cancel.hidden=!busy;};
+ const lock=()=>{section.dataset.garminImportRunning=String(busy);input.disabled=check.disabled=busy;start.disabled=busy||!check.checked||(!file&&!archive);cancel.hidden=!busy;};
  async function refresh(){
   try{
    const [originals,count]=await Promise.all([listOriginals(client,user.id),client.from('activities').select('id',{count:'exact',head:true}).eq('athlete_id',user.id)]);

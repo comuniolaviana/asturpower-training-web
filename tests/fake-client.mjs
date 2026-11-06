@@ -16,7 +16,7 @@ export function fakeClient({ role = 'coach', profile = true, signedIn = true, na
     },
   };
   const listeners = new Set();
-  const emit = event => listeners.forEach(fn => fn(event, state.signedIn ? { user } : null));
+  const emit = (event, session = state.signedIn ? { user } : null) => listeners.forEach(fn => fn(event, session));
   state.emitAuth = emit;
   const client = {
     state,

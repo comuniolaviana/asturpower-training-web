@@ -175,6 +175,41 @@ test('network error renders retry and never shows cached private rows', async ()
   t.dispose();
 });
 
+test('same-account refresh and returning to the app preserve a running history import; normal refresh resumes afterwards', async () => {
+  const t = setup({}); await flush();
+  const importer = t.dom.window.document.createElement('section');
+  importer.dataset.garminImportRunning = 'true'; t.root.append(importer);
+  for (const event of ['TOKEN_REFRESHED', 'SIGNED_IN']) {
+    t.client.state.emitAuth(event); await flush();
+    assert.ok(importer.isConnected, event + ' must not discard the import');
+  }
+  Object.defineProperty(t.dom.window.document, 'visibilityState', { configurable: true, value: 'visible' });
+  t.dom.window.document.dispatchEvent(new t.dom.window.Event('visibilitychange')); await flush();
+  assert.ok(importer.isConnected, 'Returning from another app must preserve the importer');
+  importer.dataset.garminImportRunning = 'false';
+  t.client.state.emitAuth('TOKEN_REFRESHED'); await flush();
+  assert.equal(importer.isConnected, false, 'Dashboard refresh resumes after the import');
+  t.dispose();
+});
+
+test('active history import never prevents sign-out or a changed-account refresh', async () => {
+  for (const changedAccount of [false, true]) {
+    const t = setup({}); await flush();
+    const importer = t.dom.window.document.createElement('section');
+    importer.dataset.garminImportRunning = 'true'; t.root.append(importer);
+    if (changedAccount) {
+      const nextUser = {...t.client.state.user, id: IDs.b};
+      t.client.auth.getUser = async () => ({data: {user: nextUser}, error: null});
+      t.client.state.emitAuth('SIGNED_IN', {user: nextUser});
+    }
+    else await t.client.auth.signOut();
+    await flush();
+    assert.equal(importer.isConnected, false);
+    if (!changedAccount) assert.ok(t.root.querySelector('#login-form'));
+    t.dispose();
+  }
+});
+
 test('backend errors are not exposed in user messages', () => {
   assert.ok(!messageFor({ message: 'private details', status: 500 }).includes('private details'));
   assert.ok(messageFor({ code: 'invalid_credentials' }).includes('correo y la contraseña'));

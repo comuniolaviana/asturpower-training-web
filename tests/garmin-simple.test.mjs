@@ -4,7 +4,8 @@ import {JSDOM} from 'jsdom';
 import {mountGarminPanel} from '../app/src/garmin-connect.js';
 import {mountPlanner} from '../app/src/planning.js';
 import {loadActivityDetail} from '../app/src/activity-detail.js';
-import {prepareCalendarHistory} from '../app/src/garmin-history-hub.js';
+import {prepareCalendarHistory,mountHistoryHub} from '../app/src/garmin-history-hub.js';
+import {originalIdentity} from '../app/src/garmin-original-vault.js';
 import {simpleGarminClient,attachSimpleSeries,PERSON,COACH,ACTIVITY} from './garmin-simple-fixture.mjs';
 const flush=()=>new Promise(r=>setTimeout(r,10));
 
@@ -52,4 +53,20 @@ test('one-step import still requires explicit consent, and respects cancellation
  const f=simpleGarminClient();await assert.rejects(prepareCalendarHistory(f.client,PERSON,{archiveId:'anything'}),/autorización/);
  const abort=new AbortController();abort.abort();await assert.rejects(prepareCalendarHistory(f.client,PERSON,{archiveId:'anything',consent:true,signal:abort.signal}),{name:'AbortError'});
  assert.equal(f.calls.length,0);assert.equal(f.writes.length,0);
+});
+test('history import marks only its active lifetime, including cleanup after a failed download',async()=>{
+ const dom=new JSDOM('<div id="history"></div>'),f=simpleGarminClient(),root=dom.window.document.querySelector('#history');
+ const chunks=[{sha256:'b'.repeat(64),size:100}];
+ Object.assign(f.tables.garmin_original_archives[0],{byte_size:100,chunks,archive_id:await originalIdentity(chunks,100)});
+ let finishDownload;
+ f.client.storage={from:()=>({download:()=>new Promise(resolve=>{finishDownload=resolve;})})};
+ const dispose=mountHistoryHub({root,client:f.client,user:{id:PERSON}});await flush();
+ const section=root.querySelector('section'),check=root.querySelector('input[type="checkbox"]');
+ assert.equal(section.dataset.garminImportRunning,'false');
+ check.checked=true;check.dispatchEvent(new dom.window.Event('change'));
+ [...root.querySelectorAll('button')].find(b=>b.textContent==='Preparar historial guardado').click();await flush();
+ assert.equal(section.dataset.garminImportRunning,'true');
+ finishDownload({data:null,error:{message:'synthetic network failure'}});await flush();
+ assert.equal(section.dataset.garminImportRunning,'false');
+ dispose();dom.window.close();
 });
