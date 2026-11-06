@@ -1,6 +1,7 @@
 import { requestTeam } from './team-api.js';
 import { mountPlanner } from './planning.js';
 import { mountPerformance } from './performance-ui.js';
+import { mountAccountEmail } from './account-email.js';
 import { mountGarminPanel } from './garmin-connect.js';
 import { renderTeamManagement } from './team-ui.js';
 import { loadDashboard, saveProfile, messageFor, ROLE_LABELS, STATUS_LABELS } from './data.js';
@@ -30,6 +31,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   const oauthResult=new URL(root.ownerDocument.location.href).searchParams.get('garmin');
   let user = null, data = null, view = ['connected','failed','expired','cancelled','not_ready'].includes(oauthResult)?'garmin':'overview', epoch = 0, disposed = false, query = '';
   let actionBusy = false, logoutBusy = false, ignoreSession = false, teamBusy = false, teamPage = 0, preferredRole = null;
+  let emailNotice = '', emailNoticeUser = null;
   const banner = fixture ? '<div class="fixture-banner">VISTA DE PRUEBA · DATOS FICTICIOS</div>' : '';
 
   function login(message = '', retryLogout = false) {
@@ -89,6 +91,12 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
       : view === 'team' && data.role === 'coach' ? teamContent() : overview();
     root.innerHTML = `${banner}<div class="app-shell"><aside class="sidebar">${brand}${roleSwitcher}<div class="workspace-label">MI ESPACIO</div><nav aria-label="Navegación principal">${navItem('overview', 'Vista general', 'home')}${data.role === 'coach' ? navItem('team', 'Mis deportistas', 'people') : ''}${data.role === 'coach' ? navItem('performance', 'Rendimiento', 'activity') : ''}${['coach', 'athlete'].includes(data.role) ? navItem('calendar', 'Calendario', 'calendar') : ''}${['coach','athlete'].includes(data.role) ? navItem('garmin', 'Garmin', 'activity') : ''}${navItem('profile', 'Mi perfil', 'user')}</nav><div class="sidebar-bottom"><div class="sidebar-note"><span class="mini-dot"></span> Entorno de pruebas<p>Paso a paso, hacia<br>tu mejor versión.</p></div><button class="logout" data-logout>${icon('logout')} Cerrar sesión</button></div></aside><div class="workspace"><header class="topbar"><span>Mi espacio <i>/</i> <strong>${currentTitle}</strong></span><span class="identity"><span class="identity-text">${esc(name)}<small>${roleLabel}</small></span><span class="avatar small">${esc(initials(name))}</span></span></header><main id="main-content"><div class="page-heading"><div><span class="eyebrow">ASTURPOWER TRAINING</span><h1>${view === 'overview' ? `Hola, ${esc(name)}<span class="lime-period">.</span>` : currentTitle}</h1><p>${view === 'profile' ? 'Lo esencial para que tu equipo te conozca.' : 'Todo empieza por las personas que te acompañan.'}</p></div><button class="button secondary" data-refresh>${icon('refresh')} Actualizar</button></div><p id="notice" class="notice" role="status" aria-live="polite"></p>${content}${data.role !== 'admin' && view === 'overview' ? managed : ''}<footer class="workspace-footer"><span>Entrenar con propósito.</span><span>AsturPower Training</span></footer></main></div></div><dialog id="athlete-detail"><button class="dialog-close" data-close-dialog aria-label="Cerrar ficha">×</button><div id="athlete-detail-content"></div></dialog><dialog id="team-confirm"><button class="dialog-close" data-close-team aria-label="Cerrar confirmación">×</button><div id="team-confirm-content"></div></dialog>`;
     root.querySelector('#profile-form')?.addEventListener('submit', submitProfile);
+    if (view === 'profile' && data.profile) {
+      const emailRoot = root.ownerDocument.createElement('section');
+      root.querySelector('#profile-form').closest('section').after(emailRoot);
+      const accountUser = user;
+      mountAccountEmail({root:emailRoot,client,user:accountUser,notice:emailNoticeUser===user.id?emailNotice:'',onRequested:message=>{emailNotice=message;emailNoticeUser=accountUser.id;}});
+    }
     const performanceRoot = root.querySelector('#performance-panel');
     if (performanceRoot && data.role === 'coach') {
       void mountPerformance({root:performanceRoot,client,user,role:data.role,athletes:data.athletes});
