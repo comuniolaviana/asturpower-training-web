@@ -1,6 +1,7 @@
 import {uploadOriginal,listOriginals,downloadOriginal} from './garmin-original-vault.js';
 import {mountOriginalViewer} from './garmin-original-viewer.js';
 import {mountGarminHistoryImport} from './garmin-history-ui.js';
+import {openPrivateGarminArchive} from './garmin-history-import.js';
 export function mountOriginalVault({root,client,user,role}){
  if(!root||role!=='athlete'||!user?.id)return ()=>{};
  const doc=root.ownerDocument;
@@ -18,7 +19,10 @@ export function mountOriginalVault({root,client,user,role}){
  const list=node('div'),refresh=node('button','Actualizar originales','button secondary');refresh.type='button';
  const viewerRoot=node('div'),viewer=mountOriginalViewer(viewerRoot);
  wrap.append(pickLabel,consent,send,cancel,inspect,status,refresh,list,viewerRoot);root.append(wrap);
- let file=null,busy=false,disposed=false,controller=null,epoch=0;
+ let file=null,busy=false,disposed=false,controller=null,browserController=null,epoch=0;
+ const closeBrowser=node('button','Cerrar explorador de datos','button secondary');closeBrowser.type='button';closeBrowser.hidden=true;
+ closeBrowser.addEventListener('click',()=>{browserController?.abort();browserController=null;viewer.dispose();closeBrowser.hidden=true;message('Explorador cerrado. Los originales permanecen intactos.');});
+ viewerRoot.before(closeBrowser);
  const importDisposers=[];
  const stopImports=()=>{for(const dispose of importDisposers.splice(0))dispose();};
  const alive=()=>!disposed&&wrap.isConnected;
@@ -65,6 +69,22 @@ export function mountOriginalVault({root,client,user,role}){
       });card.append(explore);
      }
     }
+    if(row.status==='ready'&&row.byte_size>128*1024*1024&&/\.zip$/i.test(row.filename)){
+     const explore=node('button','Explorar todos los datos originales (FIT, TCX, GPS)','button secondary');explore.type='button';
+     explore.addEventListener('click',async()=>{
+      if(busy||!alive())return;
+      browserController?.abort();viewer.dispose();browserController=new AbortController();const inspection=browserController;
+      lock(true);explore.disabled=true;message('Abriendo el ZIP completo desde tu almacén privado…');
+      try{
+       const original=await openPrivateGarminArchive(client,user.id,row.archive_id,{signal:inspection.signal,
+        onProgress:v=>message('Comprobando fragmentos privados: '+(v.done/1024/1024).toFixed(1)+' MB leídos.')});
+       if(inspection.signal.aborted||!alive())return;
+       closeBrowser.hidden=false;await viewer.open(original.blob,original.filename);
+       message('Explorador de datos completos abierto. Puedes consultar los siete paquetes y todos sus FIT, TCX y otros archivos.');
+      }catch(error){if(alive())message(error.name==='AbortError'?'Exploración detenida.':error.message);}
+      finally{explore.disabled=false;if(alive())lock(false);}
+     });card.append(explore);
+    }
     if(row.status==='ready'&&/\.zip$/i.test(row.filename)){
      const importRoot=node('div',undefined,'garmin-history-import');card.append(importRoot);
      importDisposers.push(mountGarminHistoryImport({root:importRoot,client,ownerId:user.id,archiveId:row.archive_id}));
@@ -82,7 +102,7 @@ export function mountOriginalVault({root,client,user,role}){
   finally{controller=null;if(alive())lock(false);}
  });
  cancel.addEventListener('click',()=>{controller?.abort();cancel.disabled=true;});refresh.addEventListener('click',()=>void reload());
- const observer=new doc.defaultView.MutationObserver(()=>{if(!wrap.isConnected){disposed=true;controller?.abort();viewer.dispose();stopImports();observer.disconnect();}});
+ const observer=new doc.defaultView.MutationObserver(()=>{if(!wrap.isConnected){disposed=true;controller?.abort();browserController?.abort();viewer.dispose();stopImports();observer.disconnect();}});
  observer.observe(doc,{subtree:true,childList:true});void reload();
- return ()=>{disposed=true;controller?.abort();viewer.dispose();stopImports();observer.disconnect();};
+ return ()=>{disposed=true;controller?.abort();browserController?.abort();viewer.dispose();stopImports();observer.disconnect();};
 }
