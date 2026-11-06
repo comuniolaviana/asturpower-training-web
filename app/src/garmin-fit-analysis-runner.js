@@ -2,7 +2,7 @@
 import {loadFullCatalog} from './garmin-full-catalog.js';
 import {openPrivateGarminArchive} from './garmin-history-import.js';
 import {zipEntries,unzipEntry} from './garmin-original-zip.js';
-import {analyzeFitBytes,matchFitActivity,derivedFitRow} from './garmin-fit-analysis.js';
+import {analyzeFitBytes,matchFitActivity,derivedFitRow,resolveHistoricalTss} from './garmin-fit-analysis.js';
 
 const MAX_PACK_BYTES=64*1024*1024,MAX_FILE_BYTES=50*1024*1024;
 function canceled(signal){if(signal?.aborted)throw new DOMException('Análisis detenido','AbortError');}
@@ -22,12 +22,13 @@ async function allRows(queryFactory){
 }
 export async function readAnalysisSummary(client,ownerId,archiveId){
  await assertOwner(client,ownerId);
- const [analysis,progress]=await Promise.all([
-  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,normalized_power_watts,tss,fit_started_at,power_coverage').eq('athlete_id',ownerId).eq('archive_id',archiveId).order('fit_started_at',{ascending:false})),
+ const [analysis,progress,physiology]=await Promise.all([
+  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,normalized_power_watts,tss,fit_started_at,power_coverage,duration_seconds').eq('athlete_id',ownerId).eq('archive_id',archiveId).order('fit_started_at',{ascending:false})),
   client.from('garmin_fit_scan_progress').select('pack_name,next_index,scanned,linked').eq('athlete_id',ownerId).eq('archive_id',archiveId).limit(24),
+  client.from('athlete_physiology').select('sport,effective_date,ftp,created_at').eq('athlete_id',ownerId).eq('sport','cycling').order('effective_date',{ascending:false}).limit(500),
  ]);
- if(progress.error)throw new Error('No se pudo consultar el progreso del analizador FIT.');
- return {analysis,progress:progress.data||[]};
+ if(progress.error||physiology.error)throw new Error('No se pudo consultar el progreso o el FTP histórico del analizador FIT.');
+ return {analysis:analysis.map(row=>resolveHistoricalTss(row,physiology.data||[])),progress:progress.data||[]};
 }
 export async function processGarminFitArchive(client,ownerId,archiveId,{signal,onProgress=()=>{}}={}){
  canceled(signal);await assertOwner(client,ownerId);
