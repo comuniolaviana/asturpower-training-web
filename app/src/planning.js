@@ -102,7 +102,7 @@ export async function mountPlanner({root,client,user,role}) {
   let month=new Date();
   month=new Date(month.getFullYear(),month.getMonth(),1);
   let day=isoDate(new Date());
-  let workouts=[],activities=[],athletes=[],notice='',busy=false,editingId=null,deleteId=null;
+  let workouts=[],activities=[],athletes=[],fitMetrics=new Map(),notice='',busy=false,editingId=null,deleteId=null;
   const localDay=timestamp=>isoDate(new Date(timestamp));
   const range=()=>[isoDate(month),isoDate(new Date(month.getFullYear(),month.getMonth()+1,1))];
 
@@ -126,6 +126,17 @@ export async function mountPlanner({root,client,user,role}) {
         .gte('started_at',firstUtc).lt('started_at',lastUtc).order('started_at',{ascending:true}).limit(1000);
       if(role==='athlete')completed=completed.eq('athlete_id',user.id);
       activities=assertResult(await completed);
+      fitMetrics=new Map();
+      if(role==='athlete'){
+       // FIT original analysis is private to the owner. Its absence or failure
+       // must not hide any planned or previously imported activities.
+       try{
+        const detailed=await client.from('garmin_fit_analysis')
+         .select('activity_id,normalized_power_watts,intensity_factor,tss,power_coverage')
+         .eq('athlete_id',user.id).gte('fit_started_at',firstUtc).lt('fit_started_at',lastUtc).limit(1000);
+        if(!detailed.error&&Array.isArray(detailed.data))fitMetrics=new Map(detailed.data.map(m=>[m.activity_id,m]));
+       }catch{}
+      }
       athletes=[];
       if(role==='coach'){
         const links=assertResult(await client.from('coach_athletes')
@@ -140,7 +151,7 @@ export async function mountPlanner({root,client,user,role}) {
       }
       notice='';
     } catch(error) {
-      workouts=[];activities=[];athletes=[];
+      workouts=[];activities=[];fitMetrics=new Map();athletes=[];
       notice=error?.message||'No hemos podido cargar el calendario.';
     }
     paint();
@@ -251,6 +262,12 @@ export async function mountPlanner({root,client,user,role}) {
         const pulse=activity.avg_heart_rate===null?'':(' · '+activity.avg_heart_rate+' lpm');
         const watts=activity.avg_power_watts===null?'':(' · '+activity.avg_power_watts+' W');
         entry.append(node('p','',(SPORTS[activity.sport]||activity.sport)+' · '+Math.round(activity.duration_seconds/60)+' min'+km+pulse+watts+(athlete?' · '+athlete:'')));
+        const derived=fitMetrics.get(activity.id);
+        if(derived){
+         const np=derived.normalized_power_watts===null?'NP sin datos suficientes':'NP '+Number(derived.normalized_power_watts).toLocaleString('es-ES',{maximumFractionDigits:1})+' W';
+         const load=derived.tss===null?'TSS pendiente de FTP y muestras fiables':'IF '+Number(derived.intensity_factor).toLocaleString('es-ES',{maximumFractionDigits:2})+' · TSS '+Number(derived.tss).toLocaleString('es-ES',{maximumFractionDigits:1});
+         entry.append(node('p','ap-muted','FIT vinculado · '+np+' · '+load));
+        }
         done.append(entry);
       }
       wrap.append(done);
