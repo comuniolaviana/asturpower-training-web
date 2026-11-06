@@ -13,10 +13,11 @@ export function mountGarminFullCatalog({root,client,ownerId,archiveId,onOpen}){
  const controls=el('div',undefined,'garmin-catalog-controls');
  const search=el('input');search.type='search';search.placeholder='Buscar cualquier archivo por nombre…';search.setAttribute('aria-label','Buscar archivo Garmin');search.disabled=true;
  const kinds=el('select');kinds.setAttribute('aria-label','Filtrar tipo de archivo');
+ const showFit=el('button','Mostrar archivos FIT','button secondary');showFit.type='button';showFit.disabled=true;
  for(const [value,label] of [['','Todos los tipos'],['FIT','FIT'],['TCX','TCX'],['GPX','GPX'],['OTRO','Otros']]){
   const option=el('option',label);option.value=value;kinds.append(option);
  }
- kinds.disabled=true;controls.append(search,kinds);
+ kinds.disabled=true;controls.append(search,kinds,showFit);
  const list=el('div'),pager=el('div',undefined,'garmin-catalog-pagination');
  wrap.append(title,info,start,halt,status,controls,list,pager);root.append(wrap);
  let packs=[],all=[],page=0,busy=false,closed=false,controller=null,cache=null;
@@ -24,9 +25,12 @@ export function mountGarminFullCatalog({root,client,ownerId,archiveId,onOpen}){
  const reset=()=>{busy=false;controller=null;if(alive()){start.disabled=false;halt.hidden=true;}};
  function render(){
   all=packs.flatMap(pack=>pack.entries.map(item=>({...item,pack_name:pack.pack_name})));
-  search.disabled=kinds.disabled=!all.length;
-  const term=search.value.trim().toLocaleLowerCase(),kind=kinds.value;
-  const filtered=all.filter(x=>(!kind||x.kind===kind)&&(!term||x.name.toLocaleLowerCase().includes(term)));
+  search.disabled=kinds.disabled=showFit.disabled=!all.length;
+  // Garmin exports may contain mixed-case extensions. Searching '.fit' must
+  // always return FIT files, regardless of punctuation or Unicode variants.
+  const term=search.value.normalize('NFKC').trim().toLocaleLowerCase('es-ES').replace(/[\u200b-\u200d\ufeff]/g,''),kind=kinds.value;
+  const extension=/^\.?((?:fit|tcx|gpx))$/.exec(term)?.[1]?.toUpperCase()||null;
+  const filtered=all.filter(x=>(!kind||x.kind===kind)&&(!term||(extension?x.kind===extension:String(x.name||'').toLocaleLowerCase('es-ES').includes(term))));
   if(page>Math.max(0,Math.ceil(filtered.length/20)-1))page=0;
   list.replaceChildren();pager.replaceChildren();
   const totals=all.reduce((acc,item)=>{acc[item.kind]=(acc[item.kind]||0)+1;return acc;},{});
@@ -69,6 +73,9 @@ export function mountGarminFullCatalog({root,client,ownerId,archiveId,onOpen}){
   }catch{if(alive())status.textContent='No se ha podido comprobar el catálogo. Comprueba tu sesión.';}
  }
  search.addEventListener('input',()=>{page=0;render();});
+ search.addEventListener('change',()=>{page=0;render();});
+ search.addEventListener('search',()=>{page=0;render();});
+ showFit.addEventListener('click',()=>{search.value='';kinds.value='FIT';page=0;render();});
  kinds.addEventListener('change',()=>{page=0;render();});
  halt.addEventListener('click',()=>{controller?.abort();halt.disabled=true;});
  start.addEventListener('click',async()=>{
