@@ -82,7 +82,21 @@ export async function openPrivateGarminArchive(client,ownerId,archiveId,{signal,
  const blob={size:row.byte_size,slice(start=0,end=row.byte_size){
   const from=Math.max(0,Math.min(row.byte_size,Math.trunc(start))),to=Math.max(from,Math.min(row.byte_size,Math.trunc(end)));
   return {size:to-from,async arrayBuffer(){return (await readRange(from,to)).buffer;},
-   stream(){return new ReadableStream({async start(controller){try{controller.enqueue(await readRange(from,to));controller.close();}catch(error){controller.error(error);}}});}};
+   // Stream bounded slices: nested Garmin ZIPs may span 50+ MiB. Never load
+   // an entire compressed member (or account export) into a single readRange.
+   stream(){
+    let cursor=from;
+    return new ReadableStream({
+     async pull(controller){
+      try{
+       stopIfAborted(signal);
+       if(cursor>=to){controller.close();return;}
+       const next=Math.min(to,cursor+1024*1024);
+       const bytes=await readRange(cursor,next);cursor=next;controller.enqueue(bytes);
+      }catch(error){controller.error(error);}
+     },
+    });
+   }};
  }};
  return {blob,filename:row.filename};
 }
