@@ -167,10 +167,10 @@ export async function mountPlanner({root,client,user,role}) {
     });
     heading.append(
       button('‹','ap-nav',()=>move(-1)),
-      node('h3','',title),jump,
+      node('h3','',title),
       button('›','ap-nav',()=>move(1))
     );
-    wrap.append(heading);
+    wrap.append(heading,node('label','ap-muted','Ir directamente a otro mes del historial'),jump);
     const grid=node('div','ap-grid');
     grid.setAttribute('aria-label','Calendario de '+title);
     for(const label of WEEKDAYS)grid.append(node('span','ap-dayname',label));
