@@ -5,6 +5,7 @@ import {openPrivateGarminArchive} from './garmin-history-import.js';
 import {mountGarminFullCatalog} from './garmin-full-catalog-ui.js';
 import {mountGarminFitAnalysis} from './garmin-fit-analysis-ui.js';
 import {mountCoachFitSharing} from './garmin-fit-sharing.js';
+import {mountGarminFtpDiscovery} from './garmin-export-ftp.js';
 export function mountOriginalVault({root,client,user,role}){
  if(!root||role!=='athlete'||!user?.id)return ()=>{};
  const doc=root.ownerDocument;
@@ -103,6 +104,10 @@ export function mountOriginalVault({root,client,user,role}){
     if(row.status==='ready'&&row.byte_size>128*1024*1024&&/\.zip$/i.test(row.filename)){
      const analysisRoot=node('div',undefined,'garmin-fit-analysis-host');card.append(analysisRoot);
      importDisposers.push(mountGarminFitAnalysis({root:analysisRoot,client,ownerId:user.id,archiveId:row.archive_id}));
+    }
+    if(row.status==='ready'&&row.byte_size>128*1024*1024&&/\.zip$/i.test(row.filename)){
+     const ftpRoot=node('div',undefined,'garmin-ftp-discovery-host');card.append(ftpRoot);
+     importDisposers.push(mountGarminFtpDiscovery({root:ftpRoot,client,ownerId:user.id,archiveId:row.archive_id}));
     }
     list.append(card);
    }
