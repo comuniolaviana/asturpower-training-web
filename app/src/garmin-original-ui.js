@@ -2,6 +2,7 @@ import {uploadOriginal,listOriginals,downloadOriginal} from './garmin-original-v
 import {mountOriginalViewer} from './garmin-original-viewer.js';
 import {mountGarminHistoryImport} from './garmin-history-ui.js';
 import {openPrivateGarminArchive} from './garmin-history-import.js';
+import {mountGarminFullCatalog} from './garmin-full-catalog-ui.js';
 export function mountOriginalVault({root,client,user,role}){
  if(!root||role!=='athlete'||!user?.id)return ()=>{};
  const doc=root.ownerDocument;
@@ -88,6 +89,11 @@ export function mountOriginalVault({root,client,user,role}){
     if(row.status==='ready'&&/\.zip$/i.test(row.filename)){
      const importRoot=node('div',undefined,'garmin-history-import');card.append(importRoot);
      importDisposers.push(mountGarminHistoryImport({root:importRoot,client,ownerId:user.id,archiveId:row.archive_id}));
+    }
+    if(row.status==='ready'&&row.byte_size>128*1024*1024&&/\.zip$/i.test(row.filename)){
+     const catalogRoot=node('div',undefined,'garmin-full-catalog-host');card.append(catalogRoot);
+     importDisposers.push(mountGarminFullCatalog({root:catalogRoot,client,ownerId:user.id,archiveId:row.archive_id,
+      onOpen:async(blob,name)=>{closeBrowser.hidden=false;await viewer.open(blob,name);}}));
     }
     list.append(card);
    }
