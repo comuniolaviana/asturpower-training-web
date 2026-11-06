@@ -1,6 +1,10 @@
 // Conservative analysis of real FIT activity files. Never estimate missing samples.
 import {decodeCompleteFit} from './garmin-full-fit.js';
-export const FIT_ANALYSIS_VERSION=2;
+export const FIT_ANALYSIS_VERSION=3;
+export const loadSourceLabel=source=>({garmin_recorded:'Registrado por Garmin',garmin_session_ftp:'Calculado con FTP de la sesión Garmin',garmin_session_calculated:'Calculado con IF/FTP de la sesión Garmin',historical_ftp:'Calculado con FTP histórico confirmado'}[source]||'Sin datos suficientes');
+function recorded(value,max,{zero=false}={}){
+ return typeof value==='number'&&Number.isFinite(value)&&value<=max&&(value>0||(zero&&value===0))?value:null;
+}
 export function activityCalendarDate(value,timeZone='Europe/Madrid'){
  const ms=value instanceof Date?value.getTime():Date.parse(value);
  if(!Number.isFinite(ms))return '';
@@ -50,10 +54,10 @@ export function fitClassification(decoded){
  const sessions=decoded.messages.sessionMesgs||[],records=decoded.messages.recordMesgs||[];
  if(!sessions.length)return 'not_activity';
  if(sessions.length!==1)return 'multi_session';
- if(!records.length)return 'few_records';
  const s=sessions[0],start=timeMs(s.startTime),timer=Number(s.totalTimerTime);
  if(!Number.isFinite(start)||start<Date.UTC(1990,0,1)||!Number.isFinite(timer)||timer<=0||timer>172800)return 'invalid_session';
  if(sportOf(s.sport)==='other')return 'unsupported_sport';
+ if(!records.length&&![recorded(s.normalizedPower,3500),recorded(s.intensityFactor,10),recorded(s.trainingStressScore,5000)].some(v=>v!==null))return 'few_records';
  return null;
 }
 export function analyzeFitDecoded(decoded){
@@ -70,7 +74,10 @@ export function analyzeFitDecoded(decoded){
  const hasDeviceNp=sport==='cycling'&&typeof session.normalizedPower==='number'&&Number.isFinite(deviceNp)&&deviceNp>=0&&deviceNp<=3500&&(deviceNp>0||(power.powerSeconds>0&&!records.some(r=>typeof r.power==='number'&&r.power>0)));
  return {started_at:start,sport,timer_seconds:timer,distance_meters:distance,
   sample_count:records.length,power_seconds:power.powerSeconds,power_coverage:power.coverage,
-  normalized_power_watts:hasDeviceNp?deviceNp:power.np,np_method:hasDeviceNp?'device':power.np!==null?'records_1s':null};
+  normalized_power_watts:hasDeviceNp?deviceNp:power.np,np_method:hasDeviceNp?'device':power.np!==null?'records_1s':null,
+  device_intensity_factor:sport==='cycling'?recorded(session.intensityFactor,10,{zero:hasDeviceNp&&deviceNp===0}):null,
+  device_tss:sport==='cycling'?recorded(session.trainingStressScore,5000,{zero:hasDeviceNp&&deviceNp===0}):null,
+  device_ftp_watts:sport==='cycling'?recorded(session.thresholdPower,2500):null};
 }
 export function matchFitActivity(fit,activities){
  if(!fit||!Array.isArray(activities)||fit.sport==='other')return null;
@@ -113,6 +120,7 @@ export function derivedFitRow(fit,matched,ftpVersions,{athleteId,archiveId,packN
   ftp_watts:ftpWatts,ftp_effective_date:ftp?.effective_date||null,
   intensity_factor:intensity===null?null:Number(intensity.toFixed(4)),
   tss:tss===null?null:Number(tss.toFixed(3)),
+  device_intensity_factor:fit.device_intensity_factor??null,device_tss:fit.device_tss??null,device_ftp_watts:fit.device_ftp_watts??null,
   measurement_source:'unverified',source_format:fit.source_format||'FIT',np_method:fit.np_method||null,calculation_version:FIT_ANALYSIS_VERSION};
 }
 // Partial load model. No zero-TSS inference for days with unprocessed rides.
@@ -135,17 +143,28 @@ export function partialLoadCurve(rows,{from,to}={}){
 }
 
 export function resolveHistoricalTss(row,versions){
+ const fallback=()=>{
+  const validZero=row?.normalized_power_watts===0&&Number(row?.power_seconds)>0;
+  const deviceIf=recorded(row?.device_intensity_factor,10,{zero:validZero}),deviceTss=recorded(row?.device_tss,5000,{zero:validZero}),deviceFtp=recorded(row?.device_ftp_watts,2500);
+  const np=row?.normalized_power_watts,fromDeviceFtp=deviceFtp!==null&&typeof np==='number'&&Number.isFinite(np)&&np>=0?np/deviceFtp:null;
+  const intensity=deviceIf??fromDeviceFtp,duration=Number(row?.duration_seconds);
+  const derived=intensity!==null&&duration>=1&&duration<=172800?duration/3600*intensity*intensity*100:null;
+  const tss=deviceTss??(derived!==null&&derived<=5000?Number(derived.toFixed(3)):null);
+  return {...row,intensity_factor:intensity===null?null:Number(intensity.toFixed(4)),tss,ftp_watts:null,ftp_effective_date:null,
+   if_source:deviceIf!==null?'garmin_recorded':fromDeviceFtp!==null?'garmin_session_ftp':null,
+   tss_source:deviceTss!==null?'garmin_recorded':tss!==null?'garmin_session_calculated':null};
+ };
  if(!row||row.sport!=='cycling'||row.normalized_power_watts===null||row.normalized_power_watts===undefined)
-  return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
+  return row?.sport==='cycling'?fallback():{...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
  const np=Number(row.normalized_power_watts),ftp=ftpForDate(versions,activityCalendarDate(row.fit_started_at));
  if(!ftp||!Number.isFinite(np)||np<0)
-  return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
+  return fallback();
  const watts=Number(ftp.ftp),duration=Number(row.duration_seconds);
  if(!Number.isFinite(duration)||duration<1||duration>172800)
-  return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
+  return fallback();
  const intensity=np/watts,tss=duration/3600*intensity*intensity*100;
  if(!Number.isFinite(tss)||tss>5000)
-  return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
+  return fallback();
  return {...row,ftp_watts:watts,ftp_effective_date:ftp.effective_date,
-  intensity_factor:Number(intensity.toFixed(4)),tss:Number(tss.toFixed(3))};
+  intensity_factor:Number(intensity.toFixed(4)),tss:Number(tss.toFixed(3)),if_source:'historical_ftp',tss_source:'historical_ftp'};
 }

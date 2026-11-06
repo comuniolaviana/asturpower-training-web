@@ -27,7 +27,7 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
    results.replaceChildren();
    const linked=summary.analysis.length,withNp=summary.analysis.filter(x=>x.normalized_power_watts!==null).length;
    const withTss=summary.analysis.filter(x=>x.tss!==null).length;
-   results.append(el('p','Actividades vinculadas a su FIT: '+linked+'. Con NP calculada: '+withNp+'. Con TSS calculado: '+withTss+'.'));
+   results.append(el('p','Actividades vinculadas a su FIT: '+linked+'. Con NP disponible: '+withNp+'. Con TSS calculado: '+withTss+'.'));
    results.append(el('p','Actividades con series deportivas completas preparadas: '+(summary.series||[]).length+'.'));
    const reasons={};for(const d of summary.diagnostics||[])reasons[d.reason]=(reasons[d.reason]||0)+1;
    const labels={series_saved:'Serie deportiva guardada',linked:'Vinculada',already_linked:'Ya vinculada',not_activity:'FIT de otra categoría',multi_session:'Varias sesiones: revisar',few_records:'Sin registros de muestras',invalid_session:'Sesión sin datos suficientes',unsupported_sport:'Deporte no reconocido',no_match:'Sin coincidencia demostrable',ambiguous_match:'Varias actividades candidatas',unreadable:'Archivo ilegible',size_limit:'Tamaño fuera de límite'};
@@ -39,7 +39,7 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
      for(const [label,step] of [['Anterior',-1],['Siguiente',1]]){const b=el('button',label,'button secondary');b.type='button';b.disabled=page+step<0||(page+step)*40>=pending.length;b.addEventListener('click',()=>{page+=step;show();});list.append(b);}}
     show();
    }
-   if(withNp&&!withTss)results.append(el('p','Sin FTP histórico válido: NP puede existir, pero el TSS no se inventa. El entrenador puede registrar umbrales en Rendimiento.'));
+   if(withNp&&!withTss)results.append(el('p','Sin TSS disponible: completa la preparación para recuperar los valores de Garmin cuando existan. Para recalcular se necesita un FTP histórico válido; no se usa el actual para años anteriores.'));
    if(linked){
     const ul=el('ul');
     for(const item of summary.analysis.slice(0,5)){

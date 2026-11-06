@@ -25,18 +25,18 @@ function zip(name,data){
  v.setUint16(end+10,1,true);v.setUint32(end+12,cd,true);v.setUint32(end+16,local,true);
  return out;
 }
-function fit(){
+function fit({sessionOnly=false}={}){
  const e=new Encoder();
  e.onMesg(Profile.MesgNum.FILE_ID,{type:'activity',manufacturer:'development',product:1,timeCreated:START});
  e.onMesg(Profile.MesgNum.SESSION,{startTime:START,timestamp:new Date(START.getTime()+120000),
-  totalTimerTime:120,totalElapsedTime:120,totalDistance:1000,sport:'cycling',avgPower:200});
+  totalTimerTime:120,totalElapsedTime:120,totalDistance:1000,sport:'cycling',avgPower:200,...(sessionOnly?{normalizedPower:200,intensityFactor:0.8,trainingStressScore:2.1,thresholdPower:250}:{})});
  e.onMesg(Profile.MesgNum.LAP,{startTime:START,timestamp:new Date(START.getTime()+120000),totalTimerTime:120,totalElapsedTime:120});
- for(let i=0;i<120;i++)e.onMesg(Profile.MesgNum.RECORD,{timestamp:new Date(START.getTime()+i*1000),power:200,
+ for(let i=0;i<(sessionOnly?0:120);i++)e.onMesg(Profile.MesgNum.RECORD,{timestamp:new Date(START.getTime()+i*1000),power:200,
   heartRate:120,positionLat:12345678,positionLong:-12345678});
  return new Uint8Array(e.close());
 }
-async function fixture(){
- const bytes=fit(),internal='private_session_123.fit';
+async function fixture(options={}){
+ const bytes=fit(options),internal='private_session_123.fit';
  const packPath='DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip';
  const pack=zip(internal,bytes),outer=zip(packPath,pack);
  const chunk={size:outer.length,sha256:createHash('sha256').update(outer).digest('hex')};
@@ -100,10 +100,15 @@ test('upgrade scans old checkpoints once, stores every sports sample and durable
  const f=await fixture();await processGarminFitArchive(f.client,OWNER,f.archiveId);
  const result=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});
  assert.equal(result.scanned,1);assert.equal(result.newLinks,0);assert.equal(result.seriesSaved,1);
- assert.equal(f.progress[0].processing_version,2);assert.equal(f.series[0].status,'ready');assert.equal(f.diagnostics[0].reason,'series_saved');
+ assert.equal(f.progress[0].processing_version,3);assert.equal(f.series[0].status,'ready');assert.equal(f.diagnostics[0].reason,'series_saved');
  const data=await loadSportSeries(f.client,OWNER,OWNER,ACTIVITY);
  assert.equal(data.rows.length,120);assert.ok(data.fields.includes('heartRate'));assert.ok(data.fields.includes('power'));assert.ok(!data.fields.includes('positionLat'));
  const again=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});assert.equal(again.seriesSaved,0);assert.equal(f.series.length,1);
+});
+test('session-only FIT imports its recorded IF/TSS without claiming or attempting nonexistent curves',async()=>{
+ const f=await fixture({sessionOnly:true});const result=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});
+ assert.equal(result.newLinks,1);assert.equal(result.seriesSaved,0);assert.equal(f.series.length,0);assert.equal(f.analyses[0].device_tss,2.1);assert.equal(f.analyses[0].device_intensity_factor,0.8);assert.equal(f.diagnostics[0].reason,'linked');
+ const loaded=await readAnalysisSummary(f.client,OWNER,f.archiveId);assert.equal(loaded.analysis[0].tss,2.1);assert.equal(loaded.analysis[0].tss_source,'garmin_recorded');
 });
 test('an alternative file cannot overwrite the metrics or publish series for an already bound source',async()=>{
  const f=await fixture();await processGarminFitArchive(f.client,OWNER,f.archiveId);

@@ -1,9 +1,10 @@
-import {resolveHistoricalTss,ftpForDate,activityCalendarDate} from './garmin-fit-analysis.js';
+import {resolveHistoricalTss,ftpForDate,activityCalendarDate,loadSourceLabel} from './garmin-fit-analysis.js';
 import {loadSportSeries,renderSportSeries} from './garmin-sports-series.js';
 import {savePhysiology} from './performance-data.js';
 const PAGE_SIZE=500;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:1});
+const fmtIf=value=>value===null||value===undefined?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:3});
 const date=value=>new Date(value).toLocaleDateString('es-ES');
 export async function loadCoachFitDetails(client,coachId,athleteId){
  const auth=await client.auth.getUser();
@@ -25,7 +26,7 @@ export async function loadCoachFitDetails(client,coachId,athleteId){
  const [activities,metrics,ftpResult]=await Promise.all([
   allRows(()=>client.from('activities').select('id,athlete_id,title,started_at,sport,duration_seconds,distance_meters,elevation_gain_meters,avg_heart_rate,avg_power_watts,source')
    .eq('athlete_id',athleteId).order('started_at',{ascending:false})),
-  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,fit_started_at,duration_seconds,sample_count,power_seconds,power_coverage,normalized_power_watts,match_offset_seconds,measurement_source,np_method')
+  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,fit_started_at,duration_seconds,sample_count,power_seconds,power_coverage,normalized_power_watts,match_offset_seconds,measurement_source,np_method,device_intensity_factor,device_tss,device_ftp_watts')
    .eq('athlete_id',athleteId).order('fit_started_at',{ascending:false})),
   client.from('athlete_physiology').select('id,sport,effective_date,ftp,lthr,hr_max,hr_rest,weight_kg,threshold_pace_seconds,power_zone_bounds,hr_zone_bounds,created_at').eq('athlete_id',athleteId)
    .eq('sport','cycling').order('effective_date',{ascending:false}).limit(500)
@@ -39,7 +40,7 @@ export async function loadCoachFitDetails(client,coachId,athleteId){
 }
 function chart(root,items,key='normalized_power_watts'){
  root.replaceChildren();
- const value=x=>key==='duration_seconds'?Number(x.activity.duration_seconds)/3600:key==='distance_meters'?(x.activity.distance_meters===null?null:Number(x.activity.distance_meters)/1000):['normalized_power_watts','tss'].includes(key)?x.metric?.[key]??null:x.activity[key];
+ const value=x=>key==='duration_seconds'?Number(x.activity.duration_seconds)/3600:key==='distance_meters'?(x.activity.distance_meters===null?null:Number(x.activity.distance_meters)/1000):['normalized_power_watts','tss','intensity_factor'].includes(key)?x.metric?.[key]??null:x.activity[key];
  const vals=items.filter(x=>value(x)!==null&&value(x)!==undefined&&Number.isFinite(Number(value(x)))).slice().sort((a,b)=>a.activity.started_at.localeCompare(b.activity.started_at));
  if(vals.length<2)return;
  const doc=root.ownerDocument,N='http://www.w3.org/2000/svg',make=(tag,attrs={})=>{
@@ -82,7 +83,7 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
    const withNp=result.metrics.filter(x=>x.normalized_power_watts!==null).length;
    const withTss=result.metrics.filter(x=>x.tss!==null).length;
    status.textContent='Acceso deportivo autorizado: '+result.activities.length.toLocaleString('es-ES')+' actividades, '+result.metrics.length.toLocaleString('es-ES')+' FIT vinculados, '+withNp+' con NP y '+withTss+' con TSS.';
-   if(!withTss)content.append(doc.createTextNode('Aún no hay TSS: registra un FTP verificable con fecha de vigencia en la ficha deportiva. No se utilizará el FTP de hoy para el pasado.'));
+   if(!withTss)content.append(doc.createTextNode('Aún no hay TSS disponible. La preparación del historial recupera el IF/TSS de Garmin cuando exista. Para recalcularlo se necesita un FTP verificable con fecha de vigencia; el FTP de hoy no se aplica al pasado.'));
    content.append(doc.createTextNode('Series deportivas preparadas: '+result.seriesIds.length+'. '+(result.seriesEnabled?'Acceso a curvas autorizado.':'La compartición de curvas todavía no está autorizada.')));
    const editor=doc.createElement('details'),editorTitle=doc.createElement('summary');editorTitle.textContent='FTP y zonas históricos: registrar un cambio con su fecha';editor.append(editorTitle);
    const form=doc.createElement('form');
@@ -101,7 +102,7 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
     finally{button.disabled=false;}
    });
    const metricLabel=doc.createElement('label');metricLabel.className='perf-field';metricLabel.textContent='Gráfico de evolución por actividad';const metricChoice=doc.createElement('select');
-   for(const [key,label] of [['duration_seconds','Duración (horas)'],['distance_meters','Distancia (km)'],['avg_heart_rate','Pulso medio (lpm)'],['avg_power_watts','Potencia media (W)'],['normalized_power_watts','Potencia normalizada (W)'],['tss','TSS con FTP histórico']]){const o=doc.createElement('option');o.value=key;o.textContent=label;metricChoice.append(o);}metricLabel.append(metricChoice);content.append(metricLabel);
+   for(const [key,label] of [['duration_seconds','Duración (horas)'],['distance_meters','Distancia (km)'],['avg_heart_rate','Pulso medio (lpm)'],['avg_power_watts','Potencia media (W)'],['normalized_power_watts','Potencia normalizada (W)'],['intensity_factor','Factor de intensidad (IF)'],['tss','TSS disponible']]){const o=doc.createElement('option');o.value=key;o.textContent=label;metricChoice.append(o);}metricLabel.append(metricChoice);content.append(metricLabel);
    const curve=doc.createElement('div');content.append(curve);
    const filter=doc.createElement('label');filter.className='perf-field';
    const text=doc.createElement('span');text.textContent='Filtrar por año';
@@ -120,14 +121,14 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
     summary.textContent='Actividades del período: '+listed.length+' · '+fmt(listed.reduce((n,x)=>n+Number(x.activity.duration_seconds||0),0)/3600)+' h · '+fmt(listed.reduce((n,x)=>n+Number(x.activity.distance_meters||0),0)/1000)+' km · Página '+(page+1)+' de '+pages+'.';
     tableHost.replaceChildren();
     const table=doc.createElement('table');
-    table.innerHTML='<thead><tr><th>Actividad</th><th>Fecha</th><th>Deporte y actividad</th><th>Tiempo</th><th>Distancia</th><th>FC media</th><th>Potencia media</th><th>NP</th><th>IF</th><th>TSS</th><th>Cobertura potencia</th><th>Muestras</th><th>Fuente NP</th><th>Disponibilidad</th></tr></thead>';
+    table.innerHTML='<thead><tr><th>Actividad</th><th>Fecha</th><th>Deporte y actividad</th><th>Tiempo</th><th>Distancia</th><th>FC media</th><th>Potencia media</th><th>NP</th><th>IF</th><th>TSS</th><th>Cobertura potencia</th><th>Muestras</th><th>Fuente NP</th><th>Fuente IF / TSS</th><th>Disponibilidad</th></tr></thead>';
     const tbody=doc.createElement('tbody');
     for(const {activity:a,metric:m} of listed.slice(page*40,(page+1)*40)){
      const tr=doc.createElement('tr');
      const openCell=doc.createElement('td'),open=doc.createElement('button');open.type='button';open.className='button secondary';open.textContent='Abrir';openCell.append(open);tr.append(openCell);
      open.addEventListener('click',async()=>{
       const inspection=++detailEpoch;detail.hidden=false;detail.replaceChildren();const h=doc.createElement('h4');h.textContent=a.title+' · '+date(a.started_at);detail.append(h);
-      const description=doc.createElement('p');description.textContent=fmt(a.duration_seconds/60)+' min · '+fmt(a.distance_meters===null?null:a.distance_meters/1000)+' km · Desnivel '+fmt(a.elevation_gain_meters)+' m · Pulso '+fmt(a.avg_heart_rate)+' lpm · Potencia media '+fmt(a.avg_power_watts)+' W · NP '+fmt(m?.normalized_power_watts)+' W · TSS '+fmt(m?.tss)+'.';detail.append(description);
+      const description=doc.createElement('p');description.textContent=fmt(a.duration_seconds/60)+' min · '+fmt(a.distance_meters===null?null:a.distance_meters/1000)+' km · Desnivel '+fmt(a.elevation_gain_meters)+' m · Pulso '+fmt(a.avg_heart_rate)+' lpm · Potencia media '+fmt(a.avg_power_watts)+' W · NP '+fmt(m?.normalized_power_watts)+' W · IF '+fmtIf(m?.intensity_factor)+' · TSS '+fmt(m?.tss)+'.';detail.append(description);
       const body=doc.createElement('div');detail.append(body);
       if(!result.seriesEnabled){body.textContent='El deportista aún no ha autorizado compartir las curvas y registros.';return;}
       if(!result.seriesIds.includes(a.id)){body.textContent=m?'El FIT está vinculado, pero faltan las series compartibles. En la cuenta del deportista: Garmin → Completar series y revisar historial.':'Esta actividad aún no tiene un FIT asociado de forma verificable. El resumen permanece disponible; consulta el diagnóstico desde Garmin en la cuenta del deportista.';return;}
@@ -139,9 +140,10 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
      });
      const values=[date(a.started_at),a.title,fmt(a.duration_seconds/60)+' min',a.distance_meters===null?'—':fmt(a.distance_meters/1000)+' km',
       fmt(a.avg_heart_rate),fmt(a.avg_power_watts),m?fmt(m.normalized_power_watts):'Sin FIT',
-      m?fmt(m.intensity_factor):'—',m?fmt(m.tss):'—',
+      m?fmtIf(m.intensity_factor):'—',m?fmt(m.tss):'—',
       m?fmt(Number(m.power_coverage)*100)+' %':'—',m?fmt(m.sample_count):'—',
       m?(m.np_method==='device'?'Registrada por Garmin':m.np_method==='records_1s'?'Calculada desde muestras':'Sin NP verificable'):'—',
+      m?'IF: '+loadSourceLabel(m.if_source)+' · TSS: '+loadSourceLabel(m.tss_source):'—',
       result.seriesIds.includes(a.id)?'Curvas y vueltas disponibles':!m?'Sin FIT vinculado':Number(m.power_seconds)===0?'FIT leído sin muestras de potencia':m.normalized_power_watts===null?'Potencia insuficiente para NP':'Series pendientes'];
      for(const value of values){const td=doc.createElement('td');td.textContent=value;tr.append(td);}
      tbody.append(tr);

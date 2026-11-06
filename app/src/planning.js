@@ -138,7 +138,7 @@ export async function mountPlanner({root,client,user,role}) {
        try{
         const [detailed,ftpHistory]=await Promise.all([
          client.from('garmin_fit_analysis')
-          .select('activity_id,sport,fit_started_at,duration_seconds,normalized_power_watts,power_coverage')
+          .select('activity_id,sport,fit_started_at,duration_seconds,normalized_power_watts,power_coverage,power_seconds,device_intensity_factor,device_tss,device_ftp_watts')
           .eq('athlete_id',user.id).gte('fit_started_at',firstUtc).lt('fit_started_at',lastUtc).limit(1000),
          client.from('athlete_physiology')
           .select('sport,effective_date,ftp,created_at').eq('athlete_id',user.id)
@@ -287,7 +287,7 @@ export async function mountPlanner({root,client,user,role}) {
         const derived=fitMetrics.get(activity.id);
         if(derived){
          const np=derived.normalized_power_watts===null?'NP sin datos suficientes':'NP '+Number(derived.normalized_power_watts).toLocaleString('es-ES',{maximumFractionDigits:1})+' W';
-         const load=derived.tss===null?'TSS pendiente de FTP y muestras fiables':'IF '+Number(derived.intensity_factor).toLocaleString('es-ES',{maximumFractionDigits:2})+' · TSS '+Number(derived.tss).toLocaleString('es-ES',{maximumFractionDigits:1});
+         const load='IF '+(derived.intensity_factor===null?'sin datos':Number(derived.intensity_factor).toLocaleString('es-ES',{maximumFractionDigits:3}))+' · TSS '+(derived.tss===null?'pendiente':Number(derived.tss).toLocaleString('es-ES',{maximumFractionDigits:1}));
          entry.append(node('p','ap-muted','FIT vinculado · '+np+' · '+load));
         }
         entry.append(node('span','ap-activity-link','Ver actividad y gráficas →'));done.append(entry);

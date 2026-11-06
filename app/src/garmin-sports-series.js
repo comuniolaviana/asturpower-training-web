@@ -69,6 +69,11 @@ export function renderSportSeries(root,data,{ftp=null,bounds=null}={}){
  const records=data.rows.map(row=>Object.fromEntries(data.fields.map((key,i)=>[key,row[i]])));
  root.append(el('p',records.length.toLocaleString('es-ES')+' registros conservados · '+data.fields.length+' campos deportivos · '+(data.laps||[]).length+' vueltas. Los huecos permanecen vacíos; no se rellenan muestras.'));
  if(data.warningCount)root.append(el('p','Lectura parcial: el SDK comunicó '+data.warningCount+' avisos. Se muestran los campos interpretados; el FIT original conserva el contenido completo.'));
+ const session=data.sessions?.[0]||{},format=(v,unit='',factor=1)=>typeof v==='number'&&Number.isFinite(v)?(v*factor).toLocaleString('es-ES',{maximumFractionDigits:1})+unit:'—';
+ const extra=el('dl');extra.className='ap-activity-metrics';
+ for(const [label,value,unit,factor] of [['Tiempo en movimiento',session.totalMovingTime,' min',1/60],['Tiempo transcurrido',session.totalElapsedTime,' min',1/60],['Velocidad media',session.enhancedAvgSpeed??session.avgSpeed,' km/h',3.6],['Velocidad máxima',session.enhancedMaxSpeed??session.maxSpeed,' km/h',3.6],['Pulso máximo',session.maxHeartRate,' lpm',1],['Potencia máxima',session.maxPower,' W',1],['Cadencia media',session.avgCadence,' rpm',1],['Cadencia máxima',session.maxCadence,' rpm',1],['Calorías',session.totalCalories,' kcal',1],['Trabajo',session.totalWork,' kJ',1/1000],['Temperatura media',session.avgTemperature,' °C',1],['Ascenso',session.totalAscent,' m',1],['Descenso',session.totalDescent,' m',1]]){
+  if(typeof value!=='number'||!Number.isFinite(value))continue;const box=el('div');box.append(el('dt',label),el('dd',format(value,unit,factor)));extra.append(box);
+ }if(extra.childElementCount)root.append(el('h3','Más datos de la sesión'),extra);
  const charts=el('div');root.append(charts);mountFitCharts(charts,chartPreview(records));
  const note=charts.querySelector('.garmin-fit-chart-note');if(note)note.textContent='El dibujo conserva los extremos y simplifica puntos. La tabla contiene todos los registros y marcas de tiempo de las series deportivas compartidas.';
  if(ftp&&bounds){
@@ -89,7 +94,17 @@ export function renderSportSeries(root,data,{ftp=null,bounds=null}={}){
   for(const [label,delta] of [['Anterior',-1],['Siguiente',1]]){const b=el('button',label);b.type='button';b.className='button secondary';b.disabled=page+delta<0||(page+delta)*100>=data.rows.length;b.addEventListener('click',()=>{page+=delta;draw();});host.append(b);}
  }
  draw();
- for(const [key,label] of [['laps','Vueltas'],['sessions','Resumen FIT de la sesión']]){
+ if(data.laps?.length){
+  const d=el('details'),host=el('div');d.className='activity-laps';host.className='perf-scroll';d.append(el('summary','Vueltas e intervalos ('+data.laps.length+')'),host);root.append(d);let page=0;
+  function laps(){
+   host.replaceChildren();const table=el('table'),head=el('tr');for(const label of ['Vuelta','Duración','Distancia','Potencia media','NP','Pulso medio','Cadencia'])head.append(el('th',label));const thead=el('thead');thead.append(head);table.append(thead);const body=el('tbody');
+   for(const [i,lap] of data.laps.slice(page*40,(page+1)*40).entries()){
+    const tr=el('tr');for(const value of [page*40+i+1,format(lap.totalTimerTime,' min',1/60),format(lap.totalDistance,' km',1/1000),format(lap.avgPower,' W'),format(lap.normalizedPower,' W'),format(lap.avgHeartRate,' lpm'),format(lap.avgCadence,' rpm')])tr.append(el('td',value));body.append(tr);
+   }table.append(body);host.append(table);
+   if(data.laps.length>40)for(const [label,delta] of [['Anterior',-1],['Siguiente',1]]){const b=el('button',label);b.type='button';b.className='button secondary';b.disabled=page+delta<0||(page+delta)*40>=data.laps.length;b.addEventListener('click',()=>{page+=delta;laps();});host.append(b);}
+  }d.addEventListener('toggle',()=>{if(d.open&&!host.childElementCount)laps();});
+ }
+ for(const [key,label] of [['laps','Todos los campos de las vueltas'],['sessions','Todos los campos de la sesión']]){
   const d=el('details');d.append(el('summary',label));const pre=el('pre',JSON.stringify(data[key]||[],null,2));pre.className='perf-scroll';d.append(pre);root.append(d);
  }
 }

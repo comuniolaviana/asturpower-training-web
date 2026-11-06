@@ -2,7 +2,7 @@
 import {loadFullCatalog} from './garmin-full-catalog.js';
 import {openPrivateGarminArchive} from './garmin-history-import.js';
 import {zipEntries,unzipEntry} from './garmin-original-zip.js';
-import {analyzeFitBytes,analyzeFitDecoded,fitClassification,matchFitActivity,derivedFitRow,resolveHistoricalTss} from './garmin-fit-analysis.js';
+import {analyzeFitBytes,analyzeFitDecoded,fitClassification,matchFitActivity,derivedFitRow,resolveHistoricalTss,FIT_ANALYSIS_VERSION} from './garmin-fit-analysis.js';
 import {decodeCompleteFit} from './garmin-full-fit.js';
 import {saveSportSeries,seriesDigest} from './garmin-sports-series.js';
 import {decodeSportXml} from './garmin-xml-sports.js';
@@ -26,7 +26,7 @@ async function allRows(queryFactory){
 export async function readAnalysisSummary(client,ownerId,archiveId,{includeDetails=false}={}){
  await assertOwner(client,ownerId);
  const [analysis,progress,physiology]=await Promise.all([
-  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,normalized_power_watts,tss,fit_started_at,power_coverage,duration_seconds,source_file_key,np_method').eq('athlete_id',ownerId).eq('archive_id',archiveId).order('fit_started_at',{ascending:false})),
+  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,normalized_power_watts,tss,fit_started_at,power_coverage,power_seconds,duration_seconds,source_file_key,np_method,device_intensity_factor,device_tss,device_ftp_watts').eq('athlete_id',ownerId).eq('archive_id',archiveId).order('fit_started_at',{ascending:false})),
   client.from('garmin_fit_scan_progress').select('pack_name,next_index,scanned,linked,processing_version').eq('athlete_id',ownerId).eq('archive_id',archiveId).limit(24),
   client.from('athlete_physiology').select('sport,effective_date,ftp,created_at').eq('athlete_id',ownerId).eq('sport','cycling').order('effective_date',{ascending:false}).limit(500),
  ]);
@@ -55,7 +55,7 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
  const knownActivityIds=new Set(summary.analysis.map(x=>x.activity_id));
  const knownMetrics=new Map(summary.analysis.map(x=>[x.activity_id,x]));
  const knownSeries=new Set((summary.series||[]).map(x=>x.activity_id));
- const processingVersion=includeDetails?2:1;
+ const processingVersion=includeDetails?FIT_ANALYSIS_VERSION:1;
  const {blob}=await openPrivateGarminArchive(client,ownerId,archiveId,{signal});
  const outer=await zipEntries(blob),outerMap=new Map(outer.map(x=>[x.name,x]));
  const accepts=e=>includeDetails?['FIT','TCX','GPX'].includes(e.kind):e.kind==='FIT';
@@ -82,7 +82,7 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
     diagnostics=[];
    }
    const value={athlete_id:ownerId,archive_id:archiveId,pack_name:pack.pack_name,
-    next_index:index,scanned:checked,linked:alreadyLinked,updated_at:new Date().toISOString(),...(includeDetails?{processing_version:2}:{})};
+    next_index:index,scanned:checked,linked:alreadyLinked,updated_at:new Date().toISOString(),...(includeDetails?{processing_version:FIT_ANALYSIS_VERSION}:{})};
    const saved=await client.from('garmin_fit_scan_progress').upsert(value,{onConflict:'athlete_id,archive_id,pack_name'});
    if(saved.error)throw new Error('No se pudo guardar el avance del analizador. Las actividades ya vinculadas se conservan.');
   }
@@ -119,15 +119,17 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
     const prior=knownMetrics.get(activityId),sameSource=!prior?.source_file_key||prior.source_file_key===fileKey;
     if(includeDetails&&matched&&knownActivityIds.has(activityId)&&sameSource){
      if(analysis.normalized_power_watts!==null||prior?.normalized_power_watts==null){
-      const upgraded=await client.from('garmin_fit_analysis').update({normalized_power_watts:analysis.normalized_power_watts,power_seconds:analysis.power_seconds,power_coverage:Number(analysis.power_coverage.toFixed(4)),sample_count:analysis.sample_count,np_method:analysis.np_method,calculation_version:2})
+      const upgraded=await client.from('garmin_fit_analysis').update({normalized_power_watts:analysis.normalized_power_watts,power_seconds:analysis.power_seconds,power_coverage:Number(analysis.power_coverage.toFixed(4)),sample_count:analysis.sample_count,np_method:analysis.np_method,calculation_version:FIT_ANALYSIS_VERSION})
        .eq('athlete_id',ownerId).eq('activity_id',activityId);
       if(upgraded.error)throw new Error('No se pudo guardar la revisión de potencia normalizada.');
      }
-     if(!knownSeries.has(activityId)){
+     const device={};for(const key of ['device_intensity_factor','device_tss','device_ftp_watts'])if(analysis[key]!==null&&analysis[key]!==undefined)device[key]=analysis[key];
+     if(Object.keys(device).length){const saved=await client.from('garmin_fit_analysis').update(device).eq('athlete_id',ownerId).eq('activity_id',activityId);if(saved.error)throw new Error('No se pudo conservar el IF/TSS registrado en Garmin. Puedes reanudar.');}
+     if(!knownSeries.has(activityId)&&(decoded.messages.recordMesgs||[]).length){
       canceled(signal);await assertOwner(client,ownerId);
       await saveSportSeries(client,ownerId,activityId,decoded);knownSeries.add(activityId);seriesSaved++;
      }
-     reason='series_saved';
+     reason=knownSeries.has(activityId)?'series_saved':'linked';
     }
    }
    if(includeDetails)diagnostics.push({athlete_id:ownerId,archive_id:archiveId,file_key:fileKey,file_name:info.name,pack_name:pack.pack_name,reason:reason||'invalid_session',activity_id:activityId});
