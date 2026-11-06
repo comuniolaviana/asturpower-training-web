@@ -33,8 +33,8 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
     const ul=el('ul');
     for(const item of summary.analysis.slice(0,5)){
      const li=el('li',new Date(item.fit_started_at).toLocaleDateString('es-ES')+
-      ' · '+item.sport+' · NP: '+round(Number(item.normalized_power_watts))+
-      ' W · TSS: '+(item.tss===null?'Sin FTP suficiente':round(Number(item.tss))));
+      ' · '+item.sport+' · NP: '+(item.normalized_power_watts===null?'No calculable':round(Number(item.normalized_power_watts))+' W')+
+      ' · TSS: '+(item.tss===null?'Sin FTP suficiente':round(Number(item.tss))));
      ul.append(li);
     }
     results.append(el('p','Últimas actividades analizadas:'),ul);
