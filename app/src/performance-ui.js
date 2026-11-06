@@ -1,5 +1,6 @@
 import {SPORTS,physiologyAt,estimatedLoad,parseScenario,simulatePMC} from './performance.js';
 import {loadPhysiology,savePhysiology} from './performance-data.js';
+import {mountCoachFitDashboard} from './coach-fit-dashboard.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=value=>value===null||value===undefined?'Sin dato':Number(value).toLocaleString('es',{maximumFractionDigits:2});
 const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');};
@@ -22,7 +23,8 @@ export async function mountPerformance({root,client,user,role,athletes=[]}) {
   <section class="perf-card"><span class="eyebrow">ESCENARIO MANUAL</span><h3>Simulador de carga y frescura</h3><p>Prueba una planificación con CTL (carga crónica), ATL (carga aguda) y TSB (frescura). Este escenario no modifica el calendario ni el historial.</p>
   <form data-perf-scenario><div class="perf-fields">${field('start','Primer día',{type:'date',value:today(),required:true})}${field('days','Horizonte (días)',{min:7,max:90,step:1,value:42,required:true})}${field('ctl','CTL al terminar el día anterior',{min:0,max:5000,required:true})}${field('atl','ATL al terminar el día anterior',{min:0,max:5000,required:true})}</div><label class="perf-field"><span>Sesiones previstas: una por línea, fecha; carga estimada</span><textarea name="loads" rows="5" maxlength="8000" placeholder="AAAA-MM-DD; 72.25"></textarea></label><p class="perf-note">Los días sin sesiones se simulan como descanso (carga 0). Puedes usar 0 como inicio si eliges explícitamente partir de cero. La simulación solo dura en esta pantalla.</p><button class="button secondary" type="submit">Calcular escenario</button></form><p data-perf-scenario-message role="status" aria-live="polite"></p></section></div>
   <section class="perf-card" data-perf-chart hidden><h3>Proyección del escenario</h3><p>CTL: azul · ATL: violeta · TSB: ámbar. CTL usa 42 días y ATL 7; el TSB de cada fecha usa el CTL y ATL del día anterior. Estas cifras no diagnostican sobreentrenamiento.</p><div data-perf-svg></div><details><summary>Consultar valores por día</summary><div class="perf-scroll" data-perf-days></div></details></section>
-  <section class="perf-card"><h3>Para analizar el historial real</h3><p>La importación y el cálculo desde los archivos completos de las actividades siguen pendientes. La potencia normalizada, el IF y la carga real necesitan las series temporales y el umbral vigente en cada fecha. Aquí no se muestran valores reales calculados todavía.</p></section></div>`;
+  <div data-coach-fit-dashboard></div></div>`;
+  mountCoachFitDashboard({root:root.querySelector('[data-coach-fit-dashboard]'),client,coachId:user.id,athletes});
   const $=s=>root.querySelector(s),profile=$('[data-perf-profile]'),sport=$('[data-perf-sport]'),status=$('[data-perf-status]');
   const alive=t=>root.isConnected&&ticket===t;
   const say=text=>{status.textContent=text;};
