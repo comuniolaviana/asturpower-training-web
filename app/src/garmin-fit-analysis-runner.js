@@ -8,6 +8,12 @@ import {saveSportSeries,seriesDigest} from './garmin-sports-series.js';
 import {decodeSportXml} from './garmin-xml-sports.js';
 
 const MAX_PACK_BYTES=64*1024*1024,MAX_FILE_BYTES=50*1024*1024;
+// Four bounded per-activity writes; settle every started job before advancing a
+// checkpoint or propagating an error. No fire-and-forget writes on cancellation.
+export async function settleFitJobs(jobs){
+ const results=await Promise.allSettled(jobs.map(job=>job()));
+ const failed=results.find(result=>result.status==='rejected');if(failed)throw failed.reason;
+}
 function canceled(signal){if(signal?.aborted)throw new DOMException('Análisis detenido','AbortError');}
 async function assertOwner(client,ownerId){
  const auth=await client.auth.getUser();
@@ -26,7 +32,7 @@ async function allRows(queryFactory){
 export async function readAnalysisSummary(client,ownerId,archiveId,{includeDetails=false}={}){
  await assertOwner(client,ownerId);
  const [analysis,progress,physiology]=await Promise.all([
-  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,normalized_power_watts,tss,fit_started_at,power_coverage,power_seconds,duration_seconds,source_file_key,np_method,device_intensity_factor,device_tss,device_ftp_watts').eq('athlete_id',ownerId).eq('archive_id',archiveId).order('fit_started_at',{ascending:false})),
+  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,normalized_power_watts,tss,fit_started_at,power_coverage,power_seconds,duration_seconds,source_file_key,np_method,device_intensity_factor,device_tss,device_ftp_watts,calculation_version').eq('athlete_id',ownerId).eq('archive_id',archiveId).order('fit_started_at',{ascending:false})),
   client.from('garmin_fit_scan_progress').select('pack_name,next_index,scanned,linked,processing_version').eq('athlete_id',ownerId).eq('archive_id',archiveId).limit(24),
   client.from('athlete_physiology').select('sport,effective_date,ftp,created_at').eq('athlete_id',ownerId).eq('sport','cycling').order('effective_date',{ascending:false}).limit(500),
  ]);
@@ -74,7 +80,10 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
   const localBlob=new Blob([packBytes]);
   const entries=await zipEntries(localBlob),entryMap=new Map(entries.map(e=>[e.name,e]));
   let alreadyLinked=previous?.linked||0,checked=previous?.scanned||0;
+  const jobs=[],scheduled=new Set();
+  const flush=async()=>{if(jobs.length)await settleFitJobs(jobs.splice(0));};
   async function checkpoint(index){
+   await flush();
    canceled(signal);
    if(includeDetails&&diagnostics.length){
     const recorded=await client.from('garmin_fit_diagnostics').upsert(diagnostics,{onConflict:'athlete_id,archive_id,file_key'});
@@ -90,7 +99,7 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
    canceled(signal);
    const info=fitFiles[i],file=entryMap.get(info.name);
    const fileKey=includeDetails?await seriesDigest(new TextEncoder().encode(pack.pack_name+'\n'+info.name)):null;
-   let analysis=null,decoded=null,reason='size_limit',activityId=null;
+   let analysis=null,decoded=null,reason='size_limit',activityId=null,saveDetail=null;
    if(file&&file.size>=14&&file.size<=MAX_FILE_BYTES){
     try{
      const raw=await unzipEntry(localBlob,file,MAX_FILE_BYTES);
@@ -118,21 +127,31 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
     }
     const prior=knownMetrics.get(activityId),sameSource=!prior?.source_file_key||prior.source_file_key===fileKey;
     if(includeDetails&&matched&&knownActivityIds.has(activityId)&&sameSource){
-     if(analysis.normalized_power_watts!==null||prior?.normalized_power_watts==null){
-      const upgraded=await client.from('garmin_fit_analysis').update({normalized_power_watts:analysis.normalized_power_watts,power_seconds:analysis.power_seconds,power_coverage:Number(analysis.power_coverage.toFixed(4)),sample_count:analysis.sample_count,np_method:analysis.np_method,calculation_version:FIT_ANALYSIS_VERSION})
-       .eq('athlete_id',ownerId).eq('activity_id',activityId);
-      if(upgraded.error)throw new Error('No se pudo guardar la revisión de potencia normalizada.');
-     }
-     const device={};for(const key of ['device_intensity_factor','device_tss','device_ftp_watts'])if(analysis[key]!==null&&analysis[key]!==undefined)device[key]=analysis[key];
-     if(Object.keys(device).length){const saved=await client.from('garmin_fit_analysis').update(device).eq('athlete_id',ownerId).eq('activity_id',activityId);if(saved.error)throw new Error('No se pudo conservar el IF/TSS registrado en Garmin. Puedes reanudar.');}
-     if(!knownSeries.has(activityId)&&(decoded.messages.recordMesgs||[]).length){
-      canceled(signal);await assertOwner(client,ownerId);
-      await saveSportSeries(client,ownerId,activityId,decoded);knownSeries.add(activityId);seriesSaved++;
-     }
+     if(scheduled.has(activityId))await flush();
+     const needsSeries=!knownSeries.has(activityId)&&(decoded.messages.recordMesgs||[]).length;
+     scheduled.add(activityId);
+     saveDetail=async diagnostic=>{
+      canceled(signal);
+      const patch={};
+      if((prior?.calculation_version||1)<FIT_ANALYSIS_VERSION){
+       patch.calculation_version=FIT_ANALYSIS_VERSION;
+       if(analysis.normalized_power_watts!==null||prior?.normalized_power_watts==null)Object.assign(patch,{normalized_power_watts:analysis.normalized_power_watts,power_seconds:analysis.power_seconds,power_coverage:Number(analysis.power_coverage.toFixed(4)),sample_count:analysis.sample_count,np_method:analysis.np_method});
+      }
+      // A previous interrupted v3 pass may have stored NP before IF/TSS.
+      for(const key of ['device_intensity_factor','device_tss','device_ftp_watts'])if(analysis[key]!==null&&analysis[key]!==undefined&&(prior?.[key]==null||Number(prior[key])!==analysis[key]))patch[key]=analysis[key];
+      if(Object.keys(patch).length){
+       const upgraded=await client.from('garmin_fit_analysis').update(patch).eq('athlete_id',ownerId).eq('activity_id',activityId);
+       if(upgraded.error)throw new Error('No se pudieron guardar las métricas deportivas. Puedes reanudar.');
+       Object.assign(prior,patch);
+      }
+      if(needsSeries){canceled(signal);await saveSportSeries(client,ownerId,activityId,decoded);knownSeries.add(activityId);seriesSaved++;}
+      diagnostic.reason=knownSeries.has(activityId)?'series_saved':'linked';
+     };
      reason=knownSeries.has(activityId)?'series_saved':'linked';
     }
    }
-   if(includeDetails)diagnostics.push({athlete_id:ownerId,archive_id:archiveId,file_key:fileKey,file_name:info.name,pack_name:pack.pack_name,reason:reason||'invalid_session',activity_id:activityId});
+   if(includeDetails){const diagnostic={athlete_id:ownerId,archive_id:archiveId,file_key:fileKey,file_name:info.name,pack_name:pack.pack_name,reason:reason||'invalid_session',activity_id:activityId};diagnostics.push(diagnostic);if(saveDetail)jobs.push(()=>saveDetail(diagnostic));}
+   if(jobs.length>=4)await flush();
    checked++;processedFitFiles++;
    if((i+1)%25===0||i+1===fitFiles.length){
     await checkpoint(i+1);

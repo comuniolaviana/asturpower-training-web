@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {deflateRawSync} from 'node:zlib';
 import {crc32} from '../app/src/garmin-original-zip.js';
 import {originalIdentity} from '../app/src/garmin-original-vault.js';
-import {processGarminFitArchive,readAnalysisSummary} from '../app/src/garmin-fit-analysis-runner.js';
+import {processGarminFitArchive,readAnalysisSummary,settleFitJobs} from '../app/src/garmin-fit-analysis-runner.js';
 import {loadSportSeries} from '../app/src/garmin-sports-series.js';
 
 const OWNER='22222222-2222-4222-8222-222222222222',ACTIVITY='33333333-3333-4333-8333-333333333333';
@@ -115,4 +115,17 @@ test('an alternative file cannot overwrite the metrics or publish series for an 
  f.analyses[0].source_file_key='f'.repeat(64);
  const result=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});
  assert.equal(result.seriesSaved,0);assert.equal(f.series.length,0);assert.equal(f.diagnostics[0].reason,'already_linked');assert.equal(f.analyses[0].normalized_power_watts,200);
+});
+test('a failed concurrent batch settles every started write before returning an error',async()=>{
+ let release,finished=false,returned=false;
+ const slow=new Promise(resolve=>{release=resolve;});
+ const result=settleFitJobs([async()=>{throw new Error('failed upload');},async()=>{await slow;finished=true;}]).catch(error=>{returned=true;assert.match(error.message,/failed upload/);});
+ await new Promise(resolve=>setTimeout(resolve,0));assert.equal(returned,false);release();await result;assert.equal(finished,true);assert.equal(returned,true);
+});
+test('cancelling after a completed upload preserves its series without advancing the checkpoint',async()=>{
+ const f=await fixture(),abort=new AbortController(),originalRpc=f.client.rpc.bind(f.client);
+ f.client.rpc=async(name,args)=>{const result=await originalRpc(name,args);if(name==='complete_activity_series')abort.abort();return result;};
+ await assert.rejects(processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true,signal:abort.signal}),{name:'AbortError'});
+ assert.equal(f.series[0].status,'ready');assert.equal(f.progress.length,0);
+ f.client.rpc=originalRpc;const resumed=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});assert.equal(resumed.seriesSaved,0);assert.equal(f.series.length,1);assert.equal(f.progress[0].next_index,1);
 });
