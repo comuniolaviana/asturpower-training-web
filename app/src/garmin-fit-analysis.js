@@ -113,3 +113,19 @@ export function partialLoadCurve(rows,{from,to}={}){
  }
  return output;
 }
+
+export function resolveHistoricalTss(row,versions){
+ if(!row||row.sport!=='cycling'||row.normalized_power_watts===null||row.normalized_power_watts===undefined)
+  return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
+ const np=Number(row.normalized_power_watts),ftp=ftpForDate(versions,String(row.fit_started_at).slice(0,10));
+ if(!ftp||!Number.isFinite(np)||np<0)
+  return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
+ const watts=Number(ftp.ftp),duration=Number(row.duration_seconds);
+ if(!Number.isFinite(duration)||duration<1||duration>172800)
+  return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
+ const intensity=np/watts,tss=duration/3600*intensity*intensity*100;
+ if(!Number.isFinite(tss)||tss>5000)
+  return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
+ return {...row,ftp_watts:watts,ftp_effective_date:ftp.effective_date,
+  intensity_factor:Number(intensity.toFixed(4)),tss:Number(tss.toFixed(3))};
+}
