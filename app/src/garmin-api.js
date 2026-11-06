@@ -26,7 +26,7 @@ export async function publishWorkoutToGarmin(client,workoutId,fetcher=fetch){
 
 export async function loadGarminActivities(client,athleteId){
   const result=await client.from('activities').select('id,title,started_at,sport,duration_seconds,distance_meters')
-    .eq('athlete_id',athleteId).eq('source','garmin_api').order('started_at',{ascending:false}).limit(10);
+    .eq('athlete_id',athleteId).in('source',['garmin_api','garmin_export']).order('started_at',{ascending:false}).limit(10);
   if(result.error)throw new Error('No se pudieron consultar las actividades sincronizadas.');
   return Array.isArray(result.data)?result.data:[];
 }
