@@ -102,7 +102,8 @@ export async function mountPlanner({root,client,user,role}) {
   let month=new Date();
   month=new Date(month.getFullYear(),month.getMonth(),1);
   let day=isoDate(new Date());
-  let workouts=[],athletes=[],notice='',busy=false,editingId=null,deleteId=null;
+  let workouts=[],activities=[],athletes=[],notice='',busy=false,editingId=null,deleteId=null;
+  const localDay=timestamp=>isoDate(new Date(timestamp));
   const range=()=>[isoDate(month),isoDate(new Date(month.getFullYear(),month.getMonth()+1,1))];
 
   async function load() {
@@ -116,6 +117,15 @@ export async function mountPlanner({root,client,user,role}) {
         .gte('scheduled_date',start).lt('scheduled_date',end)
         .order('scheduled_date',{ascending:true});
       workouts=assertResult(result);
+      // RLS limits both athlete and coach to activities they are authorized to see.
+      // Include adjacent UTC days so local dates close to midnight are not lost.
+      const firstUtc=new Date(Date.UTC(month.getFullYear(),month.getMonth(),0)).toISOString();
+      const lastUtc=new Date(Date.UTC(month.getFullYear(),month.getMonth()+1,2)).toISOString();
+      let completed=client.from('activities')
+        .select('id,athlete_id,started_at,sport,title,duration_seconds,distance_meters,avg_heart_rate,avg_power_watts')
+        .gte('started_at',firstUtc).lt('started_at',lastUtc).order('started_at',{ascending:true}).limit(1000);
+      if(role==='athlete')completed=completed.eq('athlete_id',user.id);
+      activities=assertResult(await completed);
       athletes=[];
       if(role==='coach'){
         const links=assertResult(await client.from('coach_athletes')
@@ -130,7 +140,7 @@ export async function mountPlanner({root,client,user,role}) {
       }
       notice='';
     } catch(error) {
-      workouts=[];athletes=[];
+      workouts=[];activities=[];athletes=[];
       notice=error?.message||'No hemos podido cargar el calendario.';
     }
     paint();
@@ -157,7 +167,7 @@ export async function mountPlanner({root,client,user,role}) {
     for(const label of WEEKDAYS)grid.append(node('span','ap-dayname',label));
     for(const date of calendarDays(month.getFullYear(),month.getMonth())){
       if(!date){grid.append(node('span','ap-blank'));continue;}
-      const count=workouts.filter(w=>w.scheduled_date===date).length;
+      const count=workouts.filter(w=>w.scheduled_date===date).length+activities.filter(a=>localDay(a.started_at)===date).length;
       const cell=button(String(Number(date.slice(-2)))+(count?' ·'+count:''),'ap-day'+(date===day?' chosen':''),()=>{day=date;editingId=null;deleteId=null;paint();});
       cell.setAttribute('aria-label',date+': '+count+' entrenamientos');
       cell.setAttribute('aria-pressed',String(date===day));
@@ -221,6 +231,21 @@ export async function mountPlanner({root,client,user,role}) {
       list.append(card);
     }
     wrap.append(list);
+    const doneToday=activities.filter(a=>localDay(a.started_at)===day);
+    if(doneToday.length){
+      const done=node('section','ap-box');
+      done.append(node('h3','','Actividades realizadas · '+day.split('-').reverse().join('/')));
+      for(const activity of doneToday){
+        const entry=node('article','ap-workout');entry.append(node('strong','',activity.title));
+        const athlete=athletes.find(a=>a.id===activity.athlete_id)?.name;
+        const km=activity.distance_meters===null?'':(' · '+(activity.distance_meters/1000).toLocaleString('es-ES',{maximumFractionDigits:2})+' km');
+        const pulse=activity.avg_heart_rate===null?'':(' · '+activity.avg_heart_rate+' lpm');
+        const watts=activity.avg_power_watts===null?'':(' · '+activity.avg_power_watts+' W');
+        entry.append(node('p','',(SPORTS[activity.sport]||activity.sport)+' · '+Math.round(activity.duration_seconds/60)+' min'+km+pulse+watts+(athlete?' · '+athlete:'')));
+        done.append(entry);
+      }
+      wrap.append(done);
+    }
     if(role==='coach')wrap.append(workoutForm());
     root.append(wrap);
   }
