@@ -22,6 +22,20 @@ try{
   assert.equal(page.headers.get('cache-control'),'no-store, max-age=0');
   const html=await page.text();
   assert.match(html,/AsturPower Training/);
+  assert.match(html,/rel="manifest" href="\/manifest.webmanifest"/);
+  const manifestResponse=await runtime.dispatchFetch(origin+'/manifest.webmanifest');
+  assert.equal(manifestResponse.status,200);
+  const manifest=await manifestResponse.json();assert.equal(manifest.display,'standalone');assert.equal(manifest.scope,'/');
+  for(const icon of manifest.icons){
+    const response=await runtime.dispatchFetch(origin+icon.src);assert.equal(response.status,200);
+    assert.match(response.headers.get('content-type'),/image\/png/);
+    const bytes=new DataView(await response.arrayBuffer());
+    assert.equal(bytes.getUint32(16),Number(icon.sizes.split('x')[0]));
+  }
+  const serviceWorker=await runtime.dispatchFetch(origin+'/sw.js');assert.equal(serviceWorker.status,200);
+  assert.match(serviceWorker.headers.get('content-type'),/javascript/);
+  assert.match(await serviceWorker.text(),/const FILES=\[/);
+  const offline=await runtime.dispatchFetch(origin+'/offline.html');assert.equal(offline.status,200);assert.match(await offline.text(),/Ahora no hay conexión/);
   const script=html.match(/src="(\/assets\/[^" ]+\.js)"/)[1];
   const js=await runtime.dispatchFetch(origin+script);
   assert.equal(js.status,200);
@@ -60,7 +74,7 @@ try{
     configuration_invalid_fields:['SUPABASE_PUBLISHABLE_KEY','SUPABASE_SECRET_KEY','GARMIN_CLIENT_ID','GARMIN_CLIENT_SECRET','GARMIN_TOKEN_ENCRYPTION_KEY','GARMIN_REDIRECT_URI'],
     configuration_problem_types:{SUPABASE_PUBLISHABLE_KEY:'missing',SUPABASE_SECRET_KEY:'missing',GARMIN_CLIENT_ID:'missing',GARMIN_CLIENT_SECRET:'missing',GARMIN_TOKEN_ENCRYPTION_KEY:'missing',GARMIN_REDIRECT_URI:'missing'},diagnostic_version:2});
   assert.equal(networkRequests,0);
-  console.log(JSON.stringify({runtime:'local workerd + real Vite assets',scenarios:14,
+  console.log(JSON.stringify({runtime:'local workerd + real Vite assets',scenarios:19,
     external_requests:networkRequests,real_garmin_connection:false,production_deployment:false},null,2));
 }finally{await runtime.dispose();}
 

@@ -13,7 +13,7 @@ const HEADERS={
   'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',
   'X-Robots-Tag':'noindex, nofollow',
   'Permissions-Policy':'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://drnefgxdrultneeodtsy.supabase.co; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+  'Content-Security-Policy':"default-src 'self'; script-src 'self'; worker-src 'self'; manifest-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://drnefgxdrultneeodtsy.supabase.co; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 };
 const json=(body,status)=>Response.json(body,{status});
 // Fixed categories only: never return a value, prefix, suffix, length or exception.

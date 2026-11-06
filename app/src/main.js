@@ -5,6 +5,10 @@ import './garmin-connect.css';
 import './garmin-original.css';
 import './planning.css';
 import './performance.css';
+import {mountInstallApp} from './pwa.js';
+import './pwa.css';
+
+mountInstallApp();
 
 const root = document.querySelector('#app');
 try {
