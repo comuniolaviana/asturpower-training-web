@@ -4,6 +4,7 @@ import {mountGarminHistoryImport} from './garmin-history-ui.js';
 import {openPrivateGarminArchive} from './garmin-history-import.js';
 import {mountGarminFullCatalog} from './garmin-full-catalog-ui.js';
 import {mountGarminFitAnalysis} from './garmin-fit-analysis-ui.js';
+import {mountCoachFitSharing} from './garmin-fit-sharing.js';
 export function mountOriginalVault({root,client,user,role}){
  if(!root||role!=='athlete'||!user?.id)return ()=>{};
  const doc=root.ownerDocument;
@@ -20,11 +21,14 @@ export function mountOriginalVault({root,client,user,role}){
  const status=node('p','','garmin-note');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
  const list=node('div'),refresh=node('button','Actualizar originales','button secondary');refresh.type='button';
  const viewerRoot=node('div'),viewer=mountOriginalViewer(viewerRoot);
- wrap.append(pickLabel,consent,send,cancel,inspect,status,refresh,list,viewerRoot);root.append(wrap);
+ wrap.append(pickLabel,consent,send,cancel,inspect,status,refresh,list,viewerRoot);
+ const sharingRoot=node('div',undefined,'garmin-sharing-controls');wrap.append(sharingRoot);
+ root.append(wrap);
  let file=null,busy=false,disposed=false,controller=null,browserController=null,epoch=0;
  const closeBrowser=node('button','Cerrar explorador de datos','button secondary');closeBrowser.type='button';closeBrowser.hidden=true;
  closeBrowser.addEventListener('click',()=>{browserController?.abort();browserController=null;viewer.dispose();closeBrowser.hidden=true;message('Explorador cerrado. Los originales permanecen intactos.');});
  viewerRoot.before(closeBrowser);
+ const sharingDispose=mountCoachFitSharing({root:sharingRoot,client,athleteId:user.id});
  const importDisposers=[];
  const stopImports=()=>{for(const dispose of importDisposers.splice(0))dispose();};
  const alive=()=>!disposed&&wrap.isConnected;
@@ -113,7 +117,7 @@ export function mountOriginalVault({root,client,user,role}){
   finally{controller=null;if(alive())lock(false);}
  });
  cancel.addEventListener('click',()=>{controller?.abort();cancel.disabled=true;});refresh.addEventListener('click',()=>void reload());
- const observer=new doc.defaultView.MutationObserver(()=>{if(!wrap.isConnected){disposed=true;controller?.abort();browserController?.abort();viewer.dispose();stopImports();observer.disconnect();}});
+ const observer=new doc.defaultView.MutationObserver(()=>{if(!wrap.isConnected){disposed=true;controller?.abort();browserController?.abort();viewer.dispose();stopImports();sharingDispose();observer.disconnect();}});
  observer.observe(doc,{subtree:true,childList:true});void reload();
  return ()=>{disposed=true;controller?.abort();browserController?.abort();viewer.dispose();stopImports();observer.disconnect();};
 }
