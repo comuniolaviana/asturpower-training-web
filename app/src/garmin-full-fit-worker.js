@@ -1,10 +1,11 @@
 import {decodeCompleteFit} from './garmin-full-fit.js';
+import {chartPreview} from './garmin-fit-charts.js';
 let decoded=null;
 self.onmessage=({data})=>{
  try{
   if(data?.type==='decode'){
    decoded=null;decoded=decodeCompleteFit(new Uint8Array(data.bytes));
-   self.postMessage({type:'decoded',counts:decoded.counts,profileVersion:decoded.profileVersion});
+   self.postMessage({type:'decoded',counts:decoded.counts,profileVersion:decoded.profileVersion,charts:chartPreview(decoded.messages.recordMesgs||[])});
   }else if(data?.type==='page'&&decoded){
    const rows=Object.hasOwn(decoded.messages,data.messageType)?decoded.messages[data.messageType]:[];
    const start=Math.max(0,Math.trunc(data.start)||0);
