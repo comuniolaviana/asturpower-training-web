@@ -1,6 +1,11 @@
 // Conservative analysis of real FIT activity files. Never estimate missing samples.
 import {decodeCompleteFit} from './garmin-full-fit.js';
-export const FIT_ANALYSIS_VERSION=1;
+export const FIT_ANALYSIS_VERSION=2;
+export function activityCalendarDate(value,timeZone='Europe/Madrid'){
+ const ms=value instanceof Date?value.getTime():Date.parse(value);
+ if(!Number.isFinite(ms))return '';
+ return new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(ms);
+}
 function timeMs(value){
  if(value instanceof Date)return value.getTime();
  if(typeof value==='string')return Date.parse(value);
@@ -39,18 +44,33 @@ export function normalizedPower(records,timerSeconds){
  return {np:Number(np.toFixed(2)),powerSeconds,coverage};
 }
 export function analyzeFitBytes(bytes){
- const decoded=decodeCompleteFit(bytes),sessions=decoded.messages.sessionMesgs||[],records=decoded.messages.recordMesgs||[];
+ return analyzeFitDecoded(decodeCompleteFit(bytes));
+}
+export function fitClassification(decoded){
+ const sessions=decoded.messages.sessionMesgs||[],records=decoded.messages.recordMesgs||[];
+ if(!sessions.length)return 'not_activity';
+ if(sessions.length!==1)return 'multi_session';
+ if(!records.length)return 'few_records';
+ const s=sessions[0],start=timeMs(s.startTime),timer=Number(s.totalTimerTime);
+ if(!Number.isFinite(start)||start<Date.UTC(1990,0,1)||!Number.isFinite(timer)||timer<=0||timer>172800)return 'invalid_session';
+ if(sportOf(s.sport)==='other')return 'unsupported_sport';
+ return null;
+}
+export function analyzeFitDecoded(decoded){
+ const sessions=decoded.messages.sessionMesgs||[],records=decoded.messages.recordMesgs||[];
  // One session is required. Multisport files and wellness FIT files cannot
  // be safely attached to an individual calendar activity at this stage.
- if(sessions.length!==1||records.length<20)return null;
+ if(fitClassification(decoded))return null;
  const session=sessions[0],started=timeMs(session.startTime),timer=Number(session.totalTimerTime);
- if(!Number.isFinite(started)||started<Date.UTC(1990,0,1)||!Number.isFinite(timer)||timer<20||timer>172800)return null;
+ if(!Number.isFinite(started)||started<Date.UTC(1990,0,1)||!Number.isFinite(timer)||timer<=0||timer>172800)return null;
  const sport=sportOf(session.sport),start=new Date(started).toISOString();
  const distance=typeof session.totalDistance==='number'&&Number.isFinite(session.totalDistance)?session.totalDistance:null;
  const power=sport==='cycling'?normalizedPower(records,timer):{np:null,powerSeconds:0,coverage:0};
+ const deviceNp=Number(session.normalizedPower);
+ const hasDeviceNp=sport==='cycling'&&typeof session.normalizedPower==='number'&&Number.isFinite(deviceNp)&&deviceNp>=0&&deviceNp<=3500&&(deviceNp>0||(power.powerSeconds>0&&!records.some(r=>typeof r.power==='number'&&r.power>0)));
  return {started_at:start,sport,timer_seconds:timer,distance_meters:distance,
   sample_count:records.length,power_seconds:power.powerSeconds,power_coverage:power.coverage,
-  normalized_power_watts:power.np};
+  normalized_power_watts:hasDeviceNp?deviceNp:power.np,np_method:hasDeviceNp?'device':power.np!==null?'records_1s':null};
 }
 export function matchFitActivity(fit,activities){
  if(!fit||!Array.isArray(activities)||fit.sport==='other')return null;
@@ -71,15 +91,15 @@ export function matchFitActivity(fit,activities){
  return {activity:candidates[0],offset_seconds:Math.round(Math.abs(Date.parse(candidates[0].started_at)-fitMs)/1000)};
 }
 export function ftpForDate(versions,date){
- return [...versions].filter(r=>r.sport==='cycling'&&r.effective_date<=date&&
-  Number.isFinite(Number(r.ftp))&&Number(r.ftp)>=1&&Number(r.ftp)<=2500)
+ const latest=[...versions].filter(r=>r.sport==='cycling'&&r.effective_date<=date)
   .sort((a,b)=>b.effective_date.localeCompare(a.effective_date)||
-   String(b.created_at||'').localeCompare(String(a.created_at||'')))[0]||null;
+   String(b.created_at||'').localeCompare(String(a.created_at||''))||String(b.id||'').localeCompare(String(a.id||'')))[0]||null;
+ return latest&&latest.ftp!==null&&Number.isFinite(Number(latest.ftp))&&Number(latest.ftp)>=1&&Number(latest.ftp)<=2500?latest:null;
 }
 export function derivedFitRow(fit,matched,ftpVersions,{athleteId,archiveId,packName,fileName}){
  if(!fit||!matched||!athleteId)return null;
  const ftp=fit.sport==='cycling'&&fit.normalized_power_watts!==null?
-  ftpForDate(ftpVersions,fit.started_at.slice(0,10)):null;
+  ftpForDate(ftpVersions,activityCalendarDate(fit.started_at)):null;
  const ftpWatts=ftp?Number(ftp.ftp):null,normalized=fit.normalized_power_watts;
  const intensity=ftpWatts?normalized/ftpWatts:null;
  const tss=intensity===null?null:fit.timer_seconds/3600*intensity*intensity*100;
@@ -93,14 +113,14 @@ export function derivedFitRow(fit,matched,ftpVersions,{athleteId,archiveId,packN
   ftp_watts:ftpWatts,ftp_effective_date:ftp?.effective_date||null,
   intensity_factor:intensity===null?null:Number(intensity.toFixed(4)),
   tss:tss===null?null:Number(tss.toFixed(3)),
-  measurement_source:'unverified',calculation_version:FIT_ANALYSIS_VERSION};
+  measurement_source:'unverified',source_format:fit.source_format||'FIT',np_method:fit.np_method||null,calculation_version:FIT_ANALYSIS_VERSION};
 }
 // Partial load model. No zero-TSS inference for days with unprocessed rides.
 export function partialLoadCurve(rows,{from,to}={}){
  if(!Array.isArray(rows)||!from||!to||from>to)return [];
  const daily=new Map();for(const r of rows){
   if(r.sport!=='cycling'||r.tss===null||!Number.isFinite(Number(r.tss)))continue;
-  const date=String(r.fit_started_at).slice(0,10);
+  const date=activityCalendarDate(r.fit_started_at);
   daily.set(date,(daily.get(date)||0)+Number(r.tss));
  }
  let ctl=0,atl=0;const output=[];
@@ -117,7 +137,7 @@ export function partialLoadCurve(rows,{from,to}={}){
 export function resolveHistoricalTss(row,versions){
  if(!row||row.sport!=='cycling'||row.normalized_power_watts===null||row.normalized_power_watts===undefined)
   return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
- const np=Number(row.normalized_power_watts),ftp=ftpForDate(versions,String(row.fit_started_at).slice(0,10));
+ const np=Number(row.normalized_power_watts),ftp=ftpForDate(versions,activityCalendarDate(row.fit_started_at));
  if(!ftp||!Number.isFinite(np)||np<0)
   return {...row,tss:null,intensity_factor:null,ftp_watts:null,ftp_effective_date:null};
  const watts=Number(ftp.ftp),duration=Number(row.duration_seconds);

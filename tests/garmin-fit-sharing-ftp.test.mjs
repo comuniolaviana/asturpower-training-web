@@ -52,7 +52,7 @@ test('share controls initialize with no consent and never disclose file names',a
  const stop=mountCoachFitSharing({root,client:f.client,athleteId:ATHLETE});
  try{
   await new Promise(r=>setTimeout(r,10));
-  assert.equal(root.querySelectorAll('input[type=checkbox]').length,1);
+  assert.equal(root.querySelectorAll('input[type=checkbox]').length,2);
   assert.equal(root.querySelector('input[type=checkbox]').checked,false);
   assert.match(root.textContent,/archivos FIT/);
   assert.match(root.textContent,/GPS/);

@@ -6,6 +6,7 @@ import {deflateRawSync} from 'node:zlib';
 import {crc32} from '../app/src/garmin-original-zip.js';
 import {originalIdentity} from '../app/src/garmin-original-vault.js';
 import {processGarminFitArchive,readAnalysisSummary} from '../app/src/garmin-fit-analysis-runner.js';
+import {loadSportSeries} from '../app/src/garmin-sports-series.js';
 
 const OWNER='22222222-2222-4222-8222-222222222222',ACTIVITY='33333333-3333-4333-8333-333333333333';
 const START=new Date('2026-05-02T10:00:00Z');
@@ -41,22 +42,28 @@ async function fixture(){
  const chunk={size:outer.length,sha256:createHash('sha256').update(outer).digest('hex')};
  const archiveId=await originalIdentity([chunk],outer.length);
  const catalog=[{owner_id:OWNER,archive_id:archiveId,pack_name:packPath,entries:[{name:internal,kind:'FIT',byte_size:bytes.length}]}];
- const analyses=[],progress=[],ftps=[];
+ const analyses=[],progress=[],ftps=[],series=[],diagnostics=[],objects=new Map();
  const activity={id:ACTIVITY,started_at:START.toISOString(),sport:'cycling',duration_seconds:120,distance_meters:1000,external_id:'12345'};
  let calls=0;
  const client={auth:{getUser:async()=>({data:{user:{id:OWNER}},error:null})},
-  storage:{from:()=>({download:async()=>({data:new Blob([outer]),error:null})})},
+  storage:{from:bucket=>({download:async path=>({data:bucket==='garmin-originals'?new Blob([outer]):objects.get(path),error:null}),upload:async(path,blob)=>{objects.set(path,blob);return {error:null};}})},
+  async rpc(name,args){
+   if(name==='reserve_activity_series'){if(!series.some(r=>r.activity_id===args.p_activity_id))series.push({athlete_id:OWNER,activity_id:args.p_activity_id,sha256:args.p_sha,byte_size:args.p_bytes,status:'uploading'});return{data:OWNER+'/'+args.p_activity_id+'/'+args.p_sha+'.gz'};}
+   if(name==='complete_activity_series'){series.find(r=>r.activity_id===args.p_activity_id).status='ready';return{error:null};}
+   throw new Error('Unexpected RPC');
+  },
   from(table){
    if(table==='garmin_original_archives'){
     const b={select(){return b;},eq(){return b;},single:async()=>({data:{archive_id:archiveId,filename:'export.zip',
       byte_size:outer.length,status:'ready',chunks:[chunk]},error:null})};return b;
    }
-   const b={select(){return b;},eq(){return b;},in(){return b;},gte(){return b;},lt(){return b;},
+   let update=null;const b={select(){return b;},update(v){update=v;return b;},eq(){return b;},in(){return b;},gte(){return b;},lt(){return b;},maybeSingle:async()=>({data:table==='garmin_activity_series'?series[0]||null:null,error:null}),
     order(){return b;},limit(){return b;},range(start,end){
-     const rows=table==='garmin_fit_analysis'?analyses:table==='activities'?[activity]:[];
+     const rows=table==='garmin_fit_analysis'?analyses:table==='activities'?[activity]:table==='garmin_activity_series'?series:table==='garmin_fit_diagnostics'?diagnostics:[];
      return Promise.resolve({data:rows.slice(start,end+1),error:null});
     },
     then(resolve){
+     if(update){Object.assign(analyses[0],update);return Promise.resolve({error:null}).then(resolve);}
      const rows=table==='garmin_original_catalog'?catalog:
       table==='garmin_fit_scan_progress'?progress:
       table==='athlete_physiology'?ftps:[];
@@ -67,12 +74,13 @@ async function fixture(){
      analyses.push(row);return {error:null};
     },
     async upsert(row){
+     if(table==='garmin_fit_diagnostics'){for(const d of row){const at=diagnostics.findIndex(v=>v.file_key===d.file_key);if(at<0)diagnostics.push(d);else diagnostics[at]=d;}return {error:null};}
      assert.equal(table,'garmin_fit_scan_progress');const i=progress.findIndex(x=>x.pack_name===row.pack_name);
      if(i>=0)progress[i]=row;else progress.push(row);return {error:null};
     }
    };return b;
   }};
- return {client,archiveId,analyses,progress,ftps,get writes(){return calls;}};
+ return {client,archiveId,analyses,progress,ftps,series,diagnostics,objects,get writes(){return calls;}};
 }
 test('FIT scanner links real session, computes NP, saves checkpoint, and resuming does not duplicate',async()=>{
  const f=await fixture(),first=await processGarminFitArchive(f.client,OWNER,f.archiveId);
@@ -87,4 +95,19 @@ test('FIT scanner links real session, computes NP, saves checkpoint, and resumin
  f.ftps.push({sport:'cycling',ftp:250,effective_date:'2026-01-01',created_at:'2026-01-02T00:00:00Z'});
  const display=await readAnalysisSummary(f.client,OWNER,f.archiveId);
  assert.equal(display.analysis[0].tss,Number((120/3600*0.8*0.8*100).toFixed(3)));
+});
+test('upgrade scans old checkpoints once, stores every sports sample and durable diagnosis, then resumes without duplicate',async()=>{
+ const f=await fixture();await processGarminFitArchive(f.client,OWNER,f.archiveId);
+ const result=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});
+ assert.equal(result.scanned,1);assert.equal(result.newLinks,0);assert.equal(result.seriesSaved,1);
+ assert.equal(f.progress[0].processing_version,2);assert.equal(f.series[0].status,'ready');assert.equal(f.diagnostics[0].reason,'series_saved');
+ const data=await loadSportSeries(f.client,OWNER,OWNER,ACTIVITY);
+ assert.equal(data.rows.length,120);assert.ok(data.fields.includes('heartRate'));assert.ok(data.fields.includes('power'));assert.ok(!data.fields.includes('positionLat'));
+ const again=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});assert.equal(again.seriesSaved,0);assert.equal(f.series.length,1);
+});
+test('an alternative file cannot overwrite the metrics or publish series for an already bound source',async()=>{
+ const f=await fixture();await processGarminFitArchive(f.client,OWNER,f.archiveId);
+ f.analyses[0].source_file_key='f'.repeat(64);
+ const result=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});
+ assert.equal(result.seriesSaved,0);assert.equal(f.series.length,0);assert.equal(f.diagnostics[0].reason,'already_linked');assert.equal(f.analyses[0].normalized_power_watts,200);
 });

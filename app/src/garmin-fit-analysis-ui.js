@@ -8,11 +8,11 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
   const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;
  };
  const container=el('section',undefined,'garmin-fit-analysis');
- const title=el('h4','Vincular automáticamente FIT con actividades');
- const intro=el('p','Analiza los FIT originales por paquetes y relaciona solo las actividades con fecha, deporte y duración compatibles. Los archivos dudosos no se vinculan. La operación se puede detener y reanudar.');
+ const title=el('h4','Completar historial: series deportivas y diagnóstico');
+ const intro=el('p','Revisa los FIT originales, conserva las series deportivas y vueltas para el análisis por actividad y registra el motivo de los descartes. Esta revisión amplía el análisis anterior: necesita recorrer de nuevo los paquetes una vez. Puedes detenerla y continuar sin repetir los paquetes completados.');
  const consent=el('label',undefined,'garmin-optin'),check=el('input');check.type='checkbox';
- consent.append(check,el('span','Autorizo analizar mis archivos FIT y conservar los resultados deportivos derivados de forma privada en mi cuenta. Los archivos originales no se comparten con el entrenador.'));
- const start=el('button','Analizar y relacionar archivos FIT','button primary'),cancel=el('button','Detener análisis','button secondary');
+ consent.append(check,el('span','Autorizo analizar mis archivos deportivos y guardar sus curvas, vueltas y registros deportivos en mi cuenta. Se compartirán solo con los entrenadores para los que haya autorizado las series. Mi ZIP original y mis rutas GPS permanecen privados.'));
+ const start=el('button','Completar series y revisar historial','button primary'),cancel=el('button','Detener análisis','button secondary');
  start.type=cancel.type='button';start.disabled=true;cancel.hidden=true;
  const status=el('p','','garmin-note');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
  const results=el('div');container.append(title,intro,consent,start,cancel,status,results);root.append(container);
@@ -22,12 +22,23 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
  function round(n){return typeof n==='number'&&Number.isFinite(n)?n.toLocaleString('es-ES',{maximumFractionDigits:2}):'—';}
  async function reload(){
   try{
-   const summary=await readAnalysisSummary(client,ownerId,archiveId);
+   const summary=await readAnalysisSummary(client,ownerId,archiveId,{includeDetails:true});
    if(!alive())return;
    results.replaceChildren();
    const linked=summary.analysis.length,withNp=summary.analysis.filter(x=>x.normalized_power_watts!==null).length;
    const withTss=summary.analysis.filter(x=>x.tss!==null).length;
    results.append(el('p','Actividades vinculadas a su FIT: '+linked+'. Con NP calculada: '+withNp+'. Con TSS calculado: '+withTss+'.'));
+   results.append(el('p','Actividades con series deportivas completas preparadas: '+(summary.series||[]).length+'.'));
+   const reasons={};for(const d of summary.diagnostics||[])reasons[d.reason]=(reasons[d.reason]||0)+1;
+   const labels={series_saved:'Serie deportiva guardada',linked:'Vinculada',already_linked:'Ya vinculada',not_activity:'FIT de otra categoría',multi_session:'Varias sesiones: revisar',few_records:'Sin registros de muestras',invalid_session:'Sesión sin datos suficientes',unsupported_sport:'Deporte no reconocido',no_match:'Sin coincidencia demostrable',ambiguous_match:'Varias actividades candidatas',unreadable:'Archivo ilegible',size_limit:'Tamaño fuera de límite'};
+   const ulReasons=el('ul');for(const [key,count] of Object.entries(reasons))ulReasons.append(el('li',(labels[key]||key)+': '+count));results.append(ulReasons);
+   const pending=(summary.diagnostics||[]).filter(d=>!['series_saved','linked','already_linked','not_activity'].includes(d.reason));
+   if(pending.length){
+    const review=el('details'),heading=el('summary','Revisar archivos pendientes ('+pending.length+')'),list=el('div');review.append(heading,list);results.append(review);let page=0;
+    function show(){list.replaceChildren();const ul=el('ul');for(const d of pending.slice(page*40,(page+1)*40))ul.append(el('li',(labels[d.reason]||d.reason)+' · '+d.file_name+' · '+d.pack_name));list.append(ul);
+     for(const [label,step] of [['Anterior',-1],['Siguiente',1]]){const b=el('button',label,'button secondary');b.type='button';b.disabled=page+step<0||(page+step)*40>=pending.length;b.addEventListener('click',()=>{page+=step;show();});list.append(b);}}
+    show();
+   }
    if(withNp&&!withTss)results.append(el('p','Sin FTP histórico válido: NP puede existir, pero el TSS no se inventa. El entrenador puede registrar umbrales en Rendimiento.'));
    if(linked){
     const ul=el('ul');
@@ -62,11 +73,11 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
   status.textContent='Preparando el análisis FIT privado. Mantén abierta esta pestaña.';
   try{
    const finished=await processGarminFitArchive(client,ownerId,archiveId,{
-    signal:controller.signal,onProgress:v=>{
+    signal:controller.signal,includeDetails:true,onProgress:v=>{
      if(!alive())return;
      status.textContent='Paquete '+v.pack+'/'+v.packages+' · FIT examinados: '+
       round(v.done)+'/'+round(v.total)+' · Nuevas actividades vinculadas: '+round(v.linked)+
-      ' · NP: '+round(v.withNp)+' · TSS: '+round(v.withTss)+'.';
+      ' · Series nuevas: '+round(v.seriesSaved||0)+' · NP nuevas: '+round(v.withNp)+'.';
     }
    });
    if(alive()){

@@ -6,7 +6,7 @@ export async function listActiveCoaches(client,athleteId){
  if(auth.error||auth.data?.user?.id!==athleteId)throw new Error('La sesión del deportista ha cambiado.');
  const [links,shares]=await Promise.all([
   client.from('coach_athletes').select('coach_id').eq('athlete_id',athleteId).eq('status','active'),
-  client.from('athlete_coach_fit_sharing').select('coach_id,consented_at').eq('athlete_id',athleteId)
+  client.from('athlete_coach_fit_sharing').select('coach_id,consented_at,series_enabled').eq('athlete_id',athleteId)
  ]);
  if(links.error||shares.error)throw new Error('No se pudieron consultar los permisos de tus entrenadores.');
  const ids=(links.data||[]).map(x=>x.coach_id);
@@ -15,7 +15,13 @@ export async function listActiveCoaches(client,athleteId){
  if(names.error)throw new Error('No se pudieron consultar los nombres de entrenadores.');
  const byId=new Map((names.data||[]).map(p=>[p.user_id,p.display_name]));
  const approved=new Map((shares.data||[]).map(s=>[s.coach_id,s.consented_at]));
- return ids.map(id=>({coach_id:id,name:byId.get(id)||'Entrenador vinculado',shared:approved.has(id),consented_at:approved.get(id)||null}));
+ return ids.map(id=>({coach_id:id,name:byId.get(id)||'Entrenador vinculado',shared:approved.has(id),consented_at:approved.get(id)||null,series_enabled:(shares.data||[]).find(s=>s.coach_id===id)?.series_enabled===true}));
+}
+export async function setCoachSeriesSharing(client,athleteId,coachId,enabled){
+ const auth=await client.auth.getUser();
+ if(auth.error||auth.data?.user?.id!==athleteId)throw new Error('La sesión del deportista ha cambiado.');
+ const result=await client.from('athlete_coach_fit_sharing').update({series_enabled:enabled===true}).eq('athlete_id',athleteId).eq('coach_id',coachId).select('series_enabled').single();
+ if(result.error||!result.data)throw new Error('No se pudo actualizar el permiso de las curvas deportivas.');
 }
 export async function setCoachFitSharing(client,athleteId,coachId,share){
  const auth=await client.auth.getUser();
@@ -52,12 +58,20 @@ export function mountCoachFitSharing({root,client,athleteId}){
     const row=create('div',undefined,'garmin-fit-share-row'),label=create('label'),box=create('input'),name=create('span');
     box.type='checkbox';box.checked=coach.shared;name.textContent=coach.name+(coach.shared?' · autorizado':' · sin acceso a métricas FIT');label.append(box,name);
     row.append(label);list.append(row);
+    const seriesLabel=create('label'),seriesBox=create('input');seriesBox.type='checkbox';seriesBox.checked=coach.series_enabled;seriesBox.disabled=!coach.shared;
+    seriesLabel.append(seriesBox,create('span','Compartir también curvas, vueltas y registros deportivos por actividad. No incluye GPS ni el archivo completo de la cuenta.'));row.append(seriesLabel);
+    seriesBox.addEventListener('change',async()=>{
+     if(busy){seriesBox.checked=!seriesBox.checked;return;}busy=true;seriesBox.disabled=true;
+     try{await setCoachSeriesSharing(client,athleteId,coach.coach_id,seriesBox.checked);if(live())status.textContent=seriesBox.checked?'Curvas deportivas autorizadas para este entrenador.':'Permiso de curvas retirado.';}
+     catch(error){seriesBox.checked=!seriesBox.checked;if(live())status.textContent=error.message;}
+     finally{busy=false;seriesBox.disabled=!box.checked;}
+    });
     box.addEventListener('change',async()=>{
      if(busy){box.checked=!box.checked;return;}
      const desired=box.checked;busy=true;box.disabled=true;
      status.textContent=desired?'Autorizando acceso a análisis deportivos…':'Revocando acceso a análisis deportivos…';
      try{await setCoachFitSharing(client,athleteId,coach.coach_id,desired);
-      if(live()){name.textContent=coach.name+(desired?' · autorizado':' · sin acceso a métricas FIT');status.textContent=desired?'Permiso deportivo activado para este entrenador.':'Permiso deportivo retirado. El entrenador ya no puede consultar tus métricas FIT.';}
+      if(live()){name.textContent=coach.name+(desired?' · autorizado':' · sin acceso a métricas FIT');seriesBox.disabled=!desired;if(!desired)seriesBox.checked=false;status.textContent=desired?'Permiso deportivo activado para este entrenador.':'Permiso deportivo retirado. El entrenador ya no puede consultar tus métricas FIT.';}
      }catch(error){box.checked=!desired;if(live())status.textContent=error.message;}
      finally{busy=false;box.disabled=false;}
     });
