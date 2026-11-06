@@ -5,6 +5,7 @@ import {deflateRawSync} from 'node:zlib';
 import {previewGarminHistory,saveGarminHistory} from '../app/src/garmin-history-import.js';
 import {crc32} from '../app/src/garmin-original-zip.js';
 import {originalIdentity} from '../app/src/garmin-original-vault.js';
+import {prepareCalendarHistory} from '../app/src/garmin-history-hub.js';
 const OWNER='22222222-2222-4222-8222-222222222222';
 function zip(name,data){
  const source=new TextEncoder().encode(JSON.stringify(data)),payload=new Uint8Array(deflateRawSync(source));
@@ -33,10 +34,20 @@ async function fixture(){
   }if(name==='activities'){
    const b={select:()=>b,eq:()=>b,in:()=>b,then:cb=>Promise.resolve({data:[...records.values()].map(r=>({source:r.source,external_id:r.external_id})),error:null}).then(cb),
     insert:async rows=>{for(const row of rows){if(row.athlete_id!==OWNER||row.source!=='garmin_export')return {error:{message:'not allowed'}};records.set(row.external_id,row);}return {error:null};}};return b;
+  }if(name==='garmin_original_catalog'){
+   const b={select:()=>b,eq:()=>b,order:()=>b,limit:()=>b,then:cb=>Promise.resolve({data:[],error:null}).then(cb)};return b;
   }throw Error('Invalid table');}
  };
  return {client,archiveId,records,setActor:id=>actor=id,requests:()=>requests};
 }
+test('single import action adds summary-only exports to the calendar without claiming curves or duplicating activities',async()=>{
+ const f=await fixture(),progress=[];
+ const first=await prepareCalendarHistory(f.client,OWNER,{archiveId:f.archiveId,consent:true,onProgress:text=>progress.push(text)});
+ assert.equal(first.imported,1);assert.equal(first.summaryOnly,true);assert.equal(f.records.size,1);
+ const second=await prepareCalendarHistory(f.client,OWNER,{archiveId:f.archiveId,consent:true});
+ assert.equal(second.imported,0);assert.equal(second.existing,1);assert.equal(f.records.size,1);
+ assert.ok(progress.some(text=>text.includes('calendario')));
+});
 test('read validated export ZIP from private immutable chunks without uploading the archive again',async()=>{
  const f=await fixture(),preview=await previewGarminHistory(f.client,OWNER,f.archiveId);
  assert.equal(preview.seen,2);assert.equal(preview.rows.length,1);assert.equal(preview.skipped,1);

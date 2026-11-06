@@ -6,7 +6,7 @@ import {mountGarminFullCatalog} from './garmin-full-catalog-ui.js';
 import {mountGarminFitAnalysis} from './garmin-fit-analysis-ui.js';
 import {mountCoachFitSharing} from './garmin-fit-sharing.js';
 import {mountGarminFtpDiscovery} from './garmin-export-ftp.js';
-export function mountOriginalVault({root,client,user,role}){
+export function mountOriginalVault({root,client,user,role,showSharing=true}){
  if(!root||role!=='athlete'||!user?.id)return ()=>{};
  const doc=root.ownerDocument;
  function node(tag,text,cls){const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
@@ -29,7 +29,7 @@ export function mountOriginalVault({root,client,user,role}){
  const closeBrowser=node('button','Cerrar explorador de datos','button secondary');closeBrowser.type='button';closeBrowser.hidden=true;
  closeBrowser.addEventListener('click',()=>{browserController?.abort();browserController=null;viewer.dispose();closeBrowser.hidden=true;message('Explorador cerrado. Los originales permanecen intactos.');});
  viewerRoot.before(closeBrowser);
- const sharingDispose=mountCoachFitSharing({root:sharingRoot,client,athleteId:user.id});
+ const sharingDispose=showSharing?mountCoachFitSharing({root:sharingRoot,client,athleteId:user.id}):()=>{};
  const importDisposers=[];
  const stopImports=()=>{for(const dispose of importDisposers.splice(0))dispose();};
  const alive=()=>!disposed&&wrap.isConnected;
@@ -124,5 +124,5 @@ export function mountOriginalVault({root,client,user,role}){
  cancel.addEventListener('click',()=>{controller?.abort();cancel.disabled=true;});refresh.addEventListener('click',()=>void reload());
  const observer=new doc.defaultView.MutationObserver(()=>{if(!wrap.isConnected){disposed=true;controller?.abort();browserController?.abort();viewer.dispose();stopImports();sharingDispose();observer.disconnect();}});
  observer.observe(doc,{subtree:true,childList:true});void reload();
- return ()=>{disposed=true;controller?.abort();browserController?.abort();viewer.dispose();stopImports();observer.disconnect();};
+ return ()=>{disposed=true;controller?.abort();browserController?.abort();viewer.dispose();stopImports();sharingDispose();observer.disconnect();};
 }

@@ -41,7 +41,7 @@ export function mountCoachFitSharing({root,client,athleteId}){
  const doc=root.ownerDocument,create=(tag,txt,cls)=>{const e=doc.createElement(tag);if(txt!==undefined)e.textContent=txt;if(cls)e.className=cls;return e;};
  const wrap=create('section',undefined,'garmin-fit-sharing');
  wrap.append(create('h4','Compartir análisis deportivos con tu entrenador'),
-  create('p','Tú decides qué entrenadores vinculados pueden consultar las métricas derivadas de tus actividades: NP, TSS (cuando haya FTP), cobertura y evolución. No se comparte tu ZIP completo, archivos FIT, rutas GPS ni registros personales. Puedes retirar el permiso cuando quieras.'));
+  create('p','Una vinculación activa permite al entrenador consultar tu perfil deportivo, resúmenes de actividades y planificación. Aquí decides, por separado, si también compartes análisis y curvas detalladas. El ZIP completo, los archivos FIT y el GPS permanecen privados. Puedes retirar estos permisos o desvincular al entrenador.'));
  const status=create('p','','garmin-note');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
  const list=create('div');wrap.append(status,list);root.append(wrap);
  let closed=false,busy=false;
@@ -56,7 +56,8 @@ export function mountCoachFitSharing({root,client,athleteId}){
    status.textContent='El acceso a datos detallados es voluntario y revocable.';
    for(const coach of coaches){
     const row=create('div',undefined,'garmin-fit-share-row'),label=create('label'),box=create('input'),name=create('span');
-    box.type='checkbox';box.checked=coach.shared;name.textContent=coach.name+(coach.shared?' · autorizado':' · sin acceso a métricas FIT');label.append(box,name);
+    row.append(create('strong',coach.name));
+    box.type='checkbox';box.checked=coach.shared;name.textContent='Compartir análisis de rendimiento (NP, IF, TSS y evolución)';label.append(box,name);
     row.append(label);list.append(row);
     const seriesLabel=create('label'),seriesBox=create('input');seriesBox.type='checkbox';seriesBox.checked=coach.series_enabled;seriesBox.disabled=!coach.shared;
     seriesLabel.append(seriesBox,create('span','Compartir también curvas, vueltas y registros deportivos por actividad. No incluye GPS ni el archivo completo de la cuenta.'));row.append(seriesLabel);
@@ -71,7 +72,7 @@ export function mountCoachFitSharing({root,client,athleteId}){
      const desired=box.checked;busy=true;box.disabled=true;
      status.textContent=desired?'Autorizando acceso a análisis deportivos…':'Revocando acceso a análisis deportivos…';
      try{await setCoachFitSharing(client,athleteId,coach.coach_id,desired);
-      if(live()){name.textContent=coach.name+(desired?' · autorizado':' · sin acceso a métricas FIT');seriesBox.disabled=!desired;if(!desired)seriesBox.checked=false;status.textContent=desired?'Permiso deportivo activado para este entrenador.':'Permiso deportivo retirado. El entrenador ya no puede consultar tus métricas FIT.';}
+      if(live()){seriesBox.disabled=!desired;if(!desired)seriesBox.checked=false;status.textContent=desired?'Permiso deportivo activado para este entrenador.':'Permiso deportivo retirado. El entrenador ya no puede consultar tus métricas FIT.';}
      }catch(error){box.checked=!desired;if(live())status.textContent=error.message;}
      finally{busy=false;box.disabled=false;}
     });

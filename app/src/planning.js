@@ -4,6 +4,7 @@ import { validateSteps, stepsTotalSeconds, describeStep } from './structured-ste
 import { createStepsEditor } from './structured-steps-ui.js';
 import { publishWorkoutToGarmin } from './garmin-api.js';
 import { resolveHistoricalTss } from './garmin-fit-analysis.js';
+import {mountActivityDetail} from './activity-detail.js';
 const SPORTS = { cycling: 'Ciclismo', running: 'Carrera', swimming: 'Natación', strength: 'Fuerza', other: 'Otro' };
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
@@ -103,11 +104,12 @@ export async function mountPlanner({root,client,user,role}) {
   let month=new Date();
   month=new Date(month.getFullYear(),month.getMonth(),1);
   let day=isoDate(new Date());
-  let workouts=[],activities=[],athletes=[],fitMetrics=new Map(),notice='',busy=false,editingId=null,deleteId=null;
+  let workouts=[],activities=[],athletes=[],fitMetrics=new Map(),notice='',busy=false,editingId=null,deleteId=null,selectedAthlete='',detailDispose=()=>{},loadEpoch=0;
   const localDay=timestamp=>isoDate(new Date(timestamp));
   const range=()=>[isoDate(month),isoDate(new Date(month.getFullYear(),month.getMonth()+1,1))];
 
   async function load() {
+    const ticket=++loadEpoch;
     notice='Cargando sesiones…';
     paint();
     try {
@@ -117,7 +119,8 @@ export async function mountPlanner({root,client,user,role}) {
         .eq(role==='coach'?'coach_id':'athlete_id',user.id)
         .gte('scheduled_date',start).lt('scheduled_date',end)
         .order('scheduled_date',{ascending:true});
-      workouts=assertResult(result);
+      if(ticket!==loadEpoch||!root.isConnected)return;
+      const nextWorkouts=assertResult(result);
       // RLS limits both athlete and coach to activities they are authorized to see.
       // Include adjacent UTC days so local dates close to midnight are not lost.
       const firstUtc=new Date(Date.UTC(month.getFullYear(),month.getMonth(),0)).toISOString();
@@ -126,8 +129,9 @@ export async function mountPlanner({root,client,user,role}) {
         .select('id,athlete_id,started_at,sport,title,duration_seconds,distance_meters,avg_heart_rate,avg_power_watts')
         .gte('started_at',firstUtc).lt('started_at',lastUtc).order('started_at',{ascending:true}).limit(1000);
       if(role==='athlete')completed=completed.eq('athlete_id',user.id);
-      activities=assertResult(await completed);
-      fitMetrics=new Map();
+      const completedResult=await completed;if(ticket!==loadEpoch||!root.isConnected)return;
+      const nextActivities=assertResult(completedResult);
+      let nextMetrics=new Map();
       if(role==='athlete'){
        // FIT original analysis is private to the owner. Its absence or failure
        // must not hide any planned or previously imported activities.
@@ -141,10 +145,10 @@ export async function mountPlanner({root,client,user,role}) {
           .eq('sport','cycling').order('effective_date',{ascending:false}).limit(500)
         ]);
         if(!detailed.error&&!ftpHistory.error&&Array.isArray(detailed.data))
-         fitMetrics=new Map(detailed.data.map(m=>[m.activity_id,resolveHistoricalTss(m,ftpHistory.data||[])]));
+         nextMetrics=new Map(detailed.data.map(m=>[m.activity_id,resolveHistoricalTss(m,ftpHistory.data||[])]));
        }catch{}
       }
-      athletes=[];
+      let nextAthletes=[];
       if(role==='coach'){
         const links=assertResult(await client.from('coach_athletes')
           .select('athlete_id').eq('coach_id',user.id).eq('status','active'));
@@ -153,21 +157,32 @@ export async function mountPlanner({root,client,user,role}) {
           const profiles=assertResult(await client.from('profiles')
             .select('user_id,display_name').in('user_id',ids));
           const names=new Map(profiles.map(profile=>[profile.user_id,profile.display_name]));
-          athletes=ids.map(id=>({id,name:names.get(id)||'Deportista sin nombre'}));
+          nextAthletes=ids.map(id=>({id,name:names.get(id)||'Deportista sin nombre'}));
         }
       }
-      notice='';
+      if(ticket!==loadEpoch||!root.isConnected)return;
+      workouts=nextWorkouts;activities=nextActivities;fitMetrics=nextMetrics;athletes=nextAthletes;notice='';
     } catch(error) {
+      if(ticket!==loadEpoch||!root.isConnected)return;
       workouts=[];activities=[];fitMetrics=new Map();athletes=[];
       notice=error?.message||'No hemos podido cargar el calendario.';
     }
-    paint();
+    if(ticket===loadEpoch&&root.isConnected)paint();
   }
 
   function paint() {
+    detailDispose();detailDispose=()=>{};
     root.replaceChildren();
     const wrap=node('div','ap-planner');
-    wrap.append(node('h2','','Calendario de entrenamientos'));
+    wrap.append(node('h2','','Calendario'));
+    if(role==='coach'&&athletes.length){
+      const choose=node('select','ap-input');choose.setAttribute('aria-label','Deportista del calendario');
+      const all=node('option','','Todos mis deportistas');all.value='';choose.append(all);
+      for(const a of athletes){const option=node('option','',a.name);option.value=a.id;choose.append(option);}choose.value=selectedAthlete;
+      choose.addEventListener('change',()=>{selectedAthlete=choose.value;editingId=null;deleteId=null;paint();});wrap.append(labelled('Deportista',choose));
+    }
+    const visibleWorkouts=workouts.filter(w=>!selectedAthlete||w.athlete_id===selectedAthlete);
+    const visibleActivities=activities.filter(a=>!selectedAthlete||a.athlete_id===selectedAthlete);
     const message=node('p','ap-status',notice);
     message.setAttribute('role','status');
     message.setAttribute('aria-live','polite');
@@ -194,7 +209,7 @@ export async function mountPlanner({root,client,user,role}) {
     for(const label of WEEKDAYS)grid.append(node('span','ap-dayname',label));
     for(const date of calendarDays(month.getFullYear(),month.getMonth())){
       if(!date){grid.append(node('span','ap-blank'));continue;}
-      const count=workouts.filter(w=>w.scheduled_date===date).length+activities.filter(a=>localDay(a.started_at)===date).length;
+      const count=visibleWorkouts.filter(w=>w.scheduled_date===date).length+visibleActivities.filter(a=>localDay(a.started_at)===date).length;
       const cell=button(String(Number(date.slice(-2)))+(count?' ·'+count:''),'ap-day'+(date===day?' chosen':''),()=>{day=date;editingId=null;deleteId=null;paint();});
       cell.setAttribute('aria-label',date+': '+count+' entrenamientos');
       cell.setAttribute('aria-pressed',String(date===day));
@@ -203,7 +218,7 @@ export async function mountPlanner({root,client,user,role}) {
     wrap.append(grid);
     const list=node('section','ap-box');
     list.append(node('h3','','Entrenamientos del '+day.split('-').reverse().join('/')));
-    const selected=workouts.filter(w=>w.scheduled_date===day);
+    const selected=visibleWorkouts.filter(w=>w.scheduled_date===day);
     if(!selected.length)list.append(node('p','ap-muted','No hay sesiones programadas para este día.'));
     for(const w of selected){
       const card=node('article','ap-workout');
@@ -258,12 +273,12 @@ export async function mountPlanner({root,client,user,role}) {
       list.append(card);
     }
     wrap.append(list);
-    const doneToday=activities.filter(a=>localDay(a.started_at)===day);
+    const doneToday=visibleActivities.filter(a=>localDay(a.started_at)===day);
     if(doneToday.length){
       const done=node('section','ap-box');
       done.append(node('h3','','Actividades realizadas · '+day.split('-').reverse().join('/')));
       for(const activity of doneToday){
-        const entry=node('article','ap-workout');entry.append(node('strong','',activity.title));
+        const entry=button('','ap-workout ap-activity-open',()=>openActivity(activity));entry.dataset.activityId=activity.id;entry.setAttribute('aria-label','Ver actividad: '+activity.title);entry.append(node('strong','',activity.title));
         const athlete=athletes.find(a=>a.id===activity.athlete_id)?.name;
         const km=activity.distance_meters===null?'':(' · '+(activity.distance_meters/1000).toLocaleString('es-ES',{maximumFractionDigits:2})+' km');
         const pulse=activity.avg_heart_rate===null?'':(' · '+activity.avg_heart_rate+' lpm');
@@ -275,11 +290,19 @@ export async function mountPlanner({root,client,user,role}) {
          const load=derived.tss===null?'TSS pendiente de FTP y muestras fiables':'IF '+Number(derived.intensity_factor).toLocaleString('es-ES',{maximumFractionDigits:2})+' · TSS '+Number(derived.tss).toLocaleString('es-ES',{maximumFractionDigits:1});
          entry.append(node('p','ap-muted','FIT vinculado · '+np+' · '+load));
         }
-        done.append(entry);
+        entry.append(node('span','ap-activity-link','Ver actividad y gráficas →'));done.append(entry);
       }
       wrap.append(done);
     }
     if(role==='coach')wrap.append(workoutForm());
+    const dialog=node('dialog','ap-activity-dialog');dialog.setAttribute('aria-label','Detalle de actividad');
+    const close=button('Cerrar actividad','ap-action',()=>{if(typeof dialog.close==='function')dialog.close();else dialog.removeAttribute('open');detailDispose();});
+    const body=node('div');dialog.append(close,body);wrap.append(dialog);
+    dialog.addEventListener('close',()=>{detailDispose();detailDispose=()=>{};});
+    function openActivity(activity){
+      detailDispose();detailDispose=mountActivityDetail({root:body,client,userId:user.id,activityId:activity.id});
+      if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');
+    }
     root.append(wrap);
   }
 
@@ -326,6 +349,7 @@ export async function mountPlanner({root,client,user,role}) {
       option.value=person.id;
       athlete.append(option);
     }
+    if(!current&&selectedAthlete)athlete.value=selectedAthlete;
     if(current)athlete.disabled=true; // Cambiar el destinatario exige crear otra sesión.
     const date=fieldInput('scheduled_date','date');date.value=current?.scheduled_date||day;date.required=true;
     const name=fieldInput('title','text','Rodaje de resistencia',160);name.value=current?.title||'';name.required=true;

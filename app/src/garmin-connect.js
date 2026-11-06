@@ -1,6 +1,6 @@
 // Garmin Connect: interfaz del deportista. Los secretos se gestionan exclusivamente en Netlify Functions.
-import { loadGarminActivities } from './garmin-api.js';
-import { mountOriginalVault } from './garmin-original-ui.js';
+import {mountHistoryHub} from './garmin-history-hub.js';
+import {mountCoachFitSharing} from './garmin-fit-sharing.js';
 const el=(tag,cls,content)=>{
   const node=document.createElement(tag);
   if(cls)node.className=cls;
@@ -30,17 +30,13 @@ async function request(client,path,method='GET',payload){
   }
   return body||{};
 }
-export async function mountGarminPanel({root,client,user,role}){
+export async function mountGarminPanel({root,client,user,role,onNavigate}){
   if(!root||!client||!user?.id)return;
   root.replaceChildren();
   const wrap=el('section','garmin-module');
   wrap.append(el('h2','','Garmin Connect'));
-  wrap.append(el('p','','Conecta Garmin para recibir actividades y enviar tus sesiones de entrenamiento. Puedes conservar también tus archivos originales completos.'));
-  const details=el('div','garmin-overview');
-  details.append(el('p','','Entrenamientos: envía las sesiones estructuradas desde tu calendario y sincroniza tu dispositivo.'));
-  details.append(el('p','','Actividades nuevas: la recepción actual guarda resúmenes. La captura automática de FIT completos está pendiente de preparar y verificar.'));
-  details.append(el('p','','Historial anterior: Garmin Starter no incluye su descarga automática. Solicita la exportación oficial para conservar el original completo.'));
-  wrap.append(details);
+  wrap.append(el('p','','Gestiona tu conexión y decide qué compartes. Tus actividades y gráficas están en Calendario.'));
+  const connection=el('section','garmin-settings-card');connection.append(el('h3','','Cuenta Garmin'));wrap.append(connection);
   const returned=new URL(root.ownerDocument.location.href).searchParams;
   const notices={expired:'El enlace de autorización anterior caducó. Inicia una conexión nueva; tu sesión Garmin puede seguir abierta.',
     failed:'Garmin ha devuelto la autorización, pero el servidor no ha podido completar la conexión.',
@@ -66,17 +62,37 @@ export async function mountGarminPanel({root,client,user,role}){
   const returnedStatus=returned.get('garmin'),issue=returned.get('issue');
   if(Object.hasOwn(notices,returnedStatus)){
     const message=notices[returnedStatus]+(returnedStatus==='failed'&&Object.hasOwn(issueNotices,issue)?' '+issueNotices[issue]:'');
-    note(wrap,message);
+    note(connection,message);
   }
-  const status=note(wrap,'Comprobando disponibilidad de la conexión…');
+  const status=note(connection,'Comprobando disponibilidad de la conexión…');
   root.append(wrap);
   if(role!=='athlete'){
     status.textContent='La conexión la autoriza cada deportista desde su propia cuenta. Un entrenador no puede introducir sus claves Garmin.';
+    const calendar=el('button','button primary','Ir a Calendario');calendar.type='button';calendar.addEventListener('click',()=>onNavigate?.('calendar'));wrap.append(calendar);
     return;
   }
   let result;
-  const originalRoot=el('div');wrap.append(originalRoot);
-  mountOriginalVault({root:originalRoot,client,user,role});
+  const historyRoot=el('div');wrap.append(historyRoot);
+  const disposeHistory=mountHistoryHub({root:historyRoot,client,user,onCalendar:()=>onNavigate?.('calendar')});
+  const privacy=el('section','garmin-settings-card');privacy.append(el('h3','','Entrenador y privacidad'));
+  const permissions=el('details','garmin-settings-details');permissions.append(el('summary','','Revisar qué comparto con mi entrenador'));
+  const sharingRoot=el('div');permissions.append(sharingRoot);privacy.append(permissions);
+  const manage=el('button','button secondary','Gestionar vinculaciones');manage.type='button';manage.addEventListener('click',()=>onNavigate?.('team'));privacy.append(manage);wrap.append(privacy);
+  const disposeSharing=mountCoachFitSharing({root:sharingRoot,client,athleteId:user.id});
+  const advanced=el('details','garmin-settings-details garmin-advanced');advanced.append(el('summary','','Opciones avanzadas'));
+  advanced.append(el('p','','Solo para revisar archivos originales, incidencias de importación o umbrales de la exportación. Para consultar actividades utiliza Calendario.'));
+  const advancedRoot=el('div');advanced.append(advancedRoot);wrap.append(advanced);
+  let mounted=false,disposeAdvanced=()=>{};
+  advanced.addEventListener('toggle',()=>{
+    if(!advanced.open||mounted)return;mounted=true;advancedRoot.textContent='Abriendo herramientas de revisión…';
+    void import('./garmin-original-ui.js').then(({mountOriginalVault})=>{
+      if(!wrap.isConnected)return;advancedRoot.replaceChildren();disposeAdvanced=mountOriginalVault({root:advancedRoot,client,user,role,showSharing:false});
+    }).catch(()=>{if(wrap.isConnected){advancedRoot.textContent='No se pudieron abrir las herramientas. Cierra y vuelve a abrir esta sección.';mounted=false;}});
+  });
+  const policy=el('p','garmin-privacy'),policyLink=el('a','','Privacidad y tratamiento de los datos de Garmin');
+  policyLink.href='/privacidad-garmin.html';policyLink.target='_blank';policyLink.rel='noopener noreferrer';policy.append(policyLink);wrap.append(policy);
+  const observer=new root.ownerDocument.defaultView.MutationObserver(()=>{if(!wrap.isConnected){disposeHistory();disposeSharing();disposeAdvanced();observer.disconnect();}});
+  observer.observe(root.ownerDocument,{childList:true,subtree:true});
   try{result=await request(client,'garmin-status');}
   catch(error){if(root.isConnected)status.textContent=error.message;return;}
   if(!root.isConnected)return;
@@ -85,18 +101,15 @@ export async function mountGarminPanel({root,client,user,role}){
     return;
   }
   if(result.connected){
-    status.textContent='Cuenta Garmin conectada a AsturPower.';
+    status.textContent='Garmin conectado';status.classList.add('garmin-connected');
     const p=Array.isArray(result.permissions)?result.permissions:[];
-    const perms=el('p','garmin-permissions','Permisos concedidos: '+(p.length?p.join(', '):'pendientes de comprobar'));
-    wrap.append(perms);
-    if(!p.includes('WORKOUT_IMPORT'))wrap.append(el('p','garmin-warning','No se ha concedido permiso para recibir entrenamientos en Garmin.'));
-    if(!p.includes('ACTIVITY_EXPORT'))wrap.append(el('p','garmin-warning','No se ha concedido permiso para compartir actividades.'));
-    wrap.append(el('p','garmin-warning',result.training_enabled
-      ?'Puedes enviar tus sesiones estructuradas desde el calendario. La llegada al dispositivo requiere sincronizarlo con Garmin Connect.'
-      :'El envío de entrenamientos está preparado y pendiente de activación y prueba real.'));
-    wrap.append(el('p','garmin-warning',result.activity_enabled
-      ?'Las actividades se mostrarán cuando Garmin entregue una notificación autorizada.'
-      :'La recepción automática está preparada y pendiente de configurar las notificaciones oficiales.'));
+    const perms=el('ul','garmin-permissions');
+    perms.append(el('li','',p.includes('ACTIVITY_EXPORT')?'Recibir actividades: autorizado':'Recibir actividades: sin autorización'),el('li','',p.includes('WORKOUT_IMPORT')?'Enviar entrenamientos: autorizado':'Enviar entrenamientos: sin autorización'));connection.append(perms);
+    if(!result.activity_enabled||!result.training_enabled)connection.append(el('p','garmin-warning','Hay funciones de sincronización pendientes de activar. Los permisos de Garmin y la disponibilidad del servicio se comprueban por separado.'));
+    const manageConnection=el('details','garmin-settings-details');manageConnection.append(el('summary','','Gestionar conexión'));
+    manageConnection.append(el('p','','Para cambiar los permisos de actividades y entrenamientos, revisa AsturPower en las aplicaciones conectadas de Garmin Connect. Al desconectar aquí se revoca el acceso; tus actividades ya guardadas se conservan.'));
+    manageConnection.append(el('p','','Las actividades nuevas reciben actualmente resúmenes. Las curvas históricas se preparan al importar la exportación; todavía no se reciben todos los FIT nuevos automáticamente.'));
+    const official=el('a','','Abrir permisos en Garmin Connect');official.href='https://connect.garmin.com/modern/settings/accountInformation';official.target='_blank';official.rel='noopener noreferrer';manageConnection.append(official);
     const disconnect=el('button','button','Desconectar Garmin');
     disconnect.type='button';
     disconnect.addEventListener('click',async()=>{
@@ -106,39 +119,16 @@ export async function mountGarminPanel({root,client,user,role}){
       try{
         const response=await request(client,'garmin-disconnect','POST');
         if(!response.disconnected)throw new Error('No se pudo desconectar Garmin.');
-        await mountGarminPanel({root,client,user,role});
+        await mountGarminPanel({root,client,user,role,onNavigate});
       }catch(error){
         status.textContent=error.message||'No se pudo desconectar Garmin. Inténtalo de nuevo.';
         disconnect.disabled=false;
       }
     });
-    wrap.append(disconnect);
-    const recent=el('section','garmin-recent');
-    recent.append(el('h3','','Actividades sincronizadas'));
-    wrap.append(recent);
-    try{
-      const activities=await loadGarminActivities(client,user.id);
-      if(!root.isConnected)return;
-      if(!activities.length)recent.append(el('p','','Todavía no se han recibido actividades de Garmin.'));
-      for(const activity of activities){
-        const item=el('article','garmin-activity');
-        item.append(el('strong','',activity.title));
-        const date=new Date(activity.started_at);
-        item.append(el('p','',date.toLocaleDateString('es-ES')+' · '+Math.round(activity.duration_seconds/60)+' min'
-          +(activity.distance_meters!==null?' · '+(activity.distance_meters/1000).toLocaleString('es-ES',{maximumFractionDigits:2})+' km':'')));
-        recent.append(item);
-      }
-    }catch{if(root.isConnected)recent.append(el('p','','Las actividades sincronizadas no se pueden consultar ahora.'));}
+    manageConnection.append(disconnect);connection.append(manageConnection);
     return;
   }
   status.textContent='Conexión disponible: debes autorizar personalmente qué datos compartes con AsturPower.';
-  const policy=el('p','garmin-privacy');
-  const policyLink=el('a','', 'Información sobre privacidad y datos de Garmin');
-  policyLink.href='https://asturpower-training.netlify.app/privacidad-garmin.html';
-  if(root.ownerDocument.location.origin==='https://asturpower-garmin-dev.asturpower-training.workers.dev')
-    policyLink.href='/privacidad-garmin.html';
-  policyLink.target='_blank';policyLink.rel='noopener noreferrer';
-  policy.append(policyLink);wrap.append(policy);
   const consent=el('label','garmin-optin');
   const checkbox=el('input');checkbox.type='checkbox';
   consent.append(checkbox,el('span','','Acepto voluntariamente conectar mi cuenta Garmin y autorizo el tratamiento de los datos deportivos que seleccione en Garmin Connect, incluidos datos fisiológicos como la frecuencia cardíaca si están disponibles, para el seguimiento de mi entrenamiento por AsturPower y mi entrenador autorizado. He leído la información de privacidad y puedo retirar la autorización.'));
@@ -159,6 +149,6 @@ export async function mountGarminPanel({root,client,user,role}){
       start.disabled=!checkbox.checked;
     }
   });
-  wrap.append(consent,start);
+  connection.append(consent,start);
 }
 
