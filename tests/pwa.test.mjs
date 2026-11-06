@@ -23,6 +23,16 @@ test('already installed app has no installation banner; unavailable prompts give
  assert.match(dom.window.document.querySelector('.app-install p').textContent,/Instalar/);
  dom.window.dispatchEvent(new dom.window.Event('appinstalled'));assert.equal(dom.window.document.querySelector('.app-install'),null);dom.window.close();
 });
+test('optional installation works without matchMedia or when the browser blocks it',()=>{
+ const missing=browser();missing.window.matchMedia=undefined;
+ assert.doesNotThrow(()=>mountInstallApp(missing.window));
+ assert.ok(missing.window.document.querySelector('.app-install'));
+ missing.window.close();
+ const blocked=browser();blocked.window.matchMedia=()=>{throw new Error('Unsupported browser context');};
+ assert.doesNotThrow(()=>mountInstallApp(blocked.window));
+ assert.ok(blocked.window.document.querySelector('.app-install'));
+ blocked.window.close();
+});
 async function worker(){
  const listeners={},stored=new Map(),requests=[],deleted=[];
  const cache={async addAll(paths){for(const path of paths)stored.set(path,new Response(path));},async match(path){return stored.get(path);},async put(path,response){stored.set(path,response);}};
