@@ -156,9 +156,18 @@ export async function mountPlanner({root,client,user,role}) {
     wrap.append(message);
     const title=month.toLocaleDateString('es-ES',{month:'long',year:'numeric'});
     const heading=node('div','ap-month-header');
+    const jump=node('input','ap-input');jump.type='month';
+    jump.value=month.getFullYear()+'-'+String(month.getMonth()+1).padStart(2,'0');
+    jump.setAttribute('aria-label','Ir a otro mes del historial');
+    jump.addEventListener('change',()=>{
+      if(!/^\\d{4}-\\d{2}$/.test(jump.value))return;
+      const [y,m]=jump.value.split('-').map(Number);
+      if(y<1990||y>new Date().getFullYear()+1||m<1||m>12)return;
+      month=new Date(y,m-1,1);day=isoDate(month);editingId=null;deleteId=null;void load();
+    });
     heading.append(
       button('‹','ap-nav',()=>move(-1)),
-      node('h3','',title),
+      node('h3','',title),jump,
       button('›','ap-nav',()=>move(1))
     );
     wrap.append(heading);
