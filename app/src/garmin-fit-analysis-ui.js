@@ -43,15 +43,14 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
    // real fatigue; show only clearly-labeled partial values when any TSS exists.
    if(withTss){
     const weighted=summary.analysis.filter(x=>x.tss!==null).sort((a,b)=>a.fit_started_at.localeCompare(b.fit_started_at));
-    const first=weighted[0].fit_started_at.slice(0,10),last=weighted.at(-1).fit_started_at.slice(0,10);
-    const days=Math.min(366,Math.ceil((Date.parse(last)-Date.parse(first))/86400000)+1);
-    if(days>=14&&days<=366){
-     const curve=partialLoadCurve(weighted,{from:first,to:last});
-     const end=curve.at(-1);
-     if(end)results.append(el('p','Estimación PARCIAL solo con TSS conocido: CTL '+round(end.partial_ctl)+
-      ' · ATL '+round(end.partial_atl)+' · TSB '+round(end.partial_tsb)+
-      '. No representa la fatiga real si faltan sesiones, FTP históricos o datos de otros deportes.'));
-    }
+    const last=weighted.at(-1).fit_started_at.slice(0,10);
+    const firstDate=new Date(last+'T12:00:00Z');firstDate.setUTCDate(firstDate.getUTCDate()-179);
+    const first=firstDate.toISOString().slice(0,10);
+    const curve=partialLoadCurve(weighted,{from:first,to:last});
+    const end=curve.at(-1);
+    if(end)results.append(el('p','Proyección PARCIAL de los últimos 180 días, solo con TSS conocido (iniciada en cero): CTL '+
+     round(end.partial_ctl)+' · ATL '+round(end.partial_atl)+' · TSB '+round(end.partial_tsb)+
+     '. No mide la fatiga real si faltan sesiones, FTP históricos o datos de otros deportes.'));
    }
   }catch{if(alive())results.append(el('p','No se pudo consultar el análisis guardado.'));}
  }
