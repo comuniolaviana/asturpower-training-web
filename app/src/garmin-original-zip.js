@@ -46,14 +46,17 @@ export async function unzipEntry(blob,entry,maxBytes=LIMIT){
  const h=new DataView(await blob.slice(entry.offset,entry.offset+30).arrayBuffer());
  if(h.byteLength!==30||h.getUint32(0,true)!==0x04034b50||h.getUint16(8,true)!==entry.method||(h.getUint16(6,true)&1))fail();
  const at=entry.offset+30+h.getUint16(26,true)+h.getUint16(28,true);if(at+entry.compressed>blob.size)fail();
- const source=blob.slice(at,at+entry.compressed);let output;
- if(entry.method===0){output=new Uint8Array(await source.arrayBuffer());}
- else{
+ const source=blob.slice(at,at+entry.compressed);
+ let stream=source.stream();
+ if(entry.method===8){
   let transform;try{transform=new DecompressionStream('deflate-raw');}catch{throw new Error('Este navegador no puede abrir esta compresión. Prueba en Chrome o Edge de ordenador.');}
-  const reader=source.stream().pipeThrough(transform).getReader(),parts=[];let size=0;
-  try{for(;;){const r=await reader.read();if(r.done)break;size+=r.value.length;if(size>maxBytes)fail();parts.push(r.value);}}
-  finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
-  output=new Uint8Array(size);let position=0;for(const part of parts){output.set(part,position);position+=part.length;}
+  stream=stream.pipeThrough(transform);
  }
+ // Stream both stored and deflated large members: a 50 MiB nested ZIP must
+ // never require a single >32 MiB remote read or bypass integrity checks.
+ const reader=stream.getReader(),parts=[];let size=0;
+ try{for(;;){const r=await reader.read();if(r.done)break;size+=r.value.length;if(size>maxBytes)fail();parts.push(r.value);}}
+ finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+ const output=new Uint8Array(size);let position=0;for(const part of parts){output.set(part,position);position+=part.length;}
  if(output.length!==entry.size||crc32(output)!==entry.crc)fail();return output;
 }
