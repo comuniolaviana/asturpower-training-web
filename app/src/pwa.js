@@ -1,7 +1,10 @@
 // Installation is user initiated. Never reload an active upload or FIT analysis.
 export function mountInstallApp(win=window){
  const doc=win.document;
- const installed=()=>win.matchMedia?.('(display-mode: standalone)').matches||win.navigator.standalone===true;
+ // Installation is optional: privacy modes and older browsers may lack matchMedia.
+ let displayMode=null;
+ try { displayMode=win.matchMedia?.('(display-mode: standalone)')??null; } catch { /* Fall back to manual installation instructions. */ }
+ const installed=()=>displayMode?.matches===true||win.navigator.standalone===true;
  if(installed())register();
  else {
   const section=doc.createElement('aside');section.className='app-install';section.setAttribute('aria-label','Instalar AsturPower');
@@ -15,7 +18,7 @@ export function mountInstallApp(win=window){
   close.addEventListener('click',()=>{section.hidden=true;});
   win.addEventListener('beforeinstallprompt',event=>{event.preventDefault();prompt=event;section.hidden=false;button.disabled=false;button.textContent='Instalar aplicación';});
   win.addEventListener('appinstalled',()=>{prompt=null;section.remove();});
-  win.matchMedia?.('(display-mode: standalone)').addEventListener?.('change',event=>{if(event.matches)section.remove();});
+  displayMode?.addEventListener?.('change',event=>{if(event.matches)section.remove();});
   button.addEventListener('click',async()=>{
    if(prompt){
     const current=prompt;prompt=null;button.disabled=true;

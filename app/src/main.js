@@ -8,7 +8,8 @@ import './performance.css';
 import {mountInstallApp} from './pwa.js';
 import './pwa.css';
 
-mountInstallApp();
+// A failure of the optional installation banner must never block login or training data.
+try { mountInstallApp(); } catch { /* Keep the core app available. */ }
 
 const root = document.querySelector('#app');
 try {
