@@ -8,7 +8,7 @@ import {saveSportSeries,seriesDigest} from './garmin-sports-series.js';
 import {decodeSportXml} from './garmin-xml-sports.js';
 
 const MAX_PACK_BYTES=64*1024*1024,MAX_FILE_BYTES=50*1024*1024;
-// Four bounded per-activity writes; settle every started job before advancing a
+// Bounded per-activity writes; settle every started job before advancing a
 // checkpoint or propagating an error. No fire-and-forget writes on cancellation.
 export async function settleFitJobs(jobs){
  const results=await Promise.allSettled(jobs.map(job=>job()));
@@ -80,8 +80,8 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
   const localBlob=new Blob([packBytes]);
   const entries=await zipEntries(localBlob),entryMap=new Map(entries.map(e=>[e.name,e]));
   let alreadyLinked=previous?.linked||0,checked=previous?.scanned||0;
-  const jobs=[],scheduled=new Set();
-  const flush=async()=>{if(jobs.length)await settleFitJobs(jobs.splice(0));};
+  const jobs=[],scheduled=new Set();let queuedRecords=0;
+  const flush=async()=>{if(jobs.length){queuedRecords=0;await settleFitJobs(jobs.splice(0));}};
   async function checkpoint(index){
    await flush();
    canceled(signal);
@@ -150,10 +150,10 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
      reason=knownSeries.has(activityId)?'series_saved':'linked';
     }
    }
-   if(includeDetails){const diagnostic={athlete_id:ownerId,archive_id:archiveId,file_key:fileKey,file_name:info.name,pack_name:pack.pack_name,reason:reason||'invalid_session',activity_id:activityId};diagnostics.push(diagnostic);if(saveDetail)jobs.push(()=>saveDetail(diagnostic));}
-   if(jobs.length>=4)await flush();
+   if(includeDetails){const diagnostic={athlete_id:ownerId,archive_id:archiveId,file_key:fileKey,file_name:info.name,pack_name:pack.pack_name,reason:reason||'invalid_session',activity_id:activityId};diagnostics.push(diagnostic);if(saveDetail){const count=(decoded.messages.recordMesgs||[]).length;if(jobs.length&&queuedRecords+count>80000)await flush();jobs.push(()=>saveDetail(diagnostic));queuedRecords+=count;}}
+   if(jobs.length>=8||queuedRecords>=80000)await flush();
    checked++;processedFitFiles++;
-   if((i+1)%25===0||i+1===fitFiles.length){
+   if((i+1)%32===0||i+1===fitFiles.length){
     await checkpoint(i+1);
     onProgress({stage:'scanning',pack:packIndex+1,packages:catalog.length,done:processedFitFiles,total:totalFitFiles,linked,withNp,withTss,errors,seriesSaved});
     // Let the browser repaint and let the user stop a long seven-pack scan.
