@@ -86,7 +86,8 @@ test('coach chooses sport metrics, overlays only those selected, and sees their 
   const minute=overlay.querySelector('[data-minute-control]');minute.value='0';minute.dispatchEvent(new dom.window.Event('input'));
   assert.match(overlay.querySelector('[data-minute-readout]').textContent,/Temperatura: 16 °C/);
   assert.doesNotMatch(overlay.querySelector('[data-minute-readout]').textContent,/Potencia:/);
-  const details=overlay.querySelector('details');details.open=true;details.dispatchEvent(new dom.window.Event('toggle'));
+  const details=[...overlay.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent==='Ver tabla minuto a minuto');
+  assert.ok(details);details.open=true;details.dispatchEvent(new dom.window.Event('toggle'));
   assert.match(details.textContent,/Temperatura/);
   assert.doesNotMatch(details.textContent,/Potencia \(W\)/);
   assert.match(details.querySelector('table').textContent,/16 °C/);
@@ -123,6 +124,7 @@ test('inside a minute, coach overlays real seconds and never draws lines across 
   record(8,119,230,84,18),
   record(30,130,null,90,16),
   record(61,141,250,92,16),
+  record(181,149,225,89,15),
  ];
  const dom=new JSDOM('<div id="root"></div>'),root=dom.window.document.getElementById('root');
  try{
