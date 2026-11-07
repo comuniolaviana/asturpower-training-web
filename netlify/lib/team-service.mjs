@@ -1,6 +1,7 @@
 import { normalizeRoles, chooseWorkspace } from '../../shared/roles.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { resolvePublicConfig } from '../functions/public-config.mjs';
+import { generateInvitationCode, hashInvitationCode, normalizeInvitationCode } from './team-invitations.mjs';
 
 export class TeamError extends Error {
   constructor(status, code) { super(code); this.status = status; this.code = code; }
@@ -9,6 +10,7 @@ const requireValue = (ok, status = 400, code = 'invalid_request') => { if (!ok) 
 const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 function result(value) {
   if (value.error) {
+    if (value.error.code === 'P0001' && ['invite_invalid','invite_limit','already_linked'].includes(value.error.message)) throw new TeamError(409, value.error.message);
     if (['23505', '23503', '23514'].includes(value.error.code)) throw new TeamError(409, 'state_conflict');
     throw new TeamError(503, 'temporarily_unavailable');
   }
@@ -55,6 +57,19 @@ export function createTeamRepository(config, secret, clientFactory = createClien
       const names = new Map(profiles.map(p => [p.user_id, p.display_name]));
       return { links: links.map(r => ({ ...r, coach_name: names.get(r.coach_id) || null, athlete_name: names.get(r.athlete_id) || null })), moreLinks: rows.length > 50 };
     },
+    async createInvitation(coachId) {
+      const code = generateInvitationCode();
+      const expiresAt = result(await service.rpc('create_coach_invitation', {
+        p_coach_id: coachId, p_hash: await hashInvitationCode(code),
+      }));
+      return { code, expiresAt };
+    },
+    async redeemInvitation(athleteId, code) {
+      const coachName = result(await service.rpc('redeem_coach_invitation', {
+        p_athlete_id: athleteId, p_hash: await hashInvitationCode(code),
+      }));
+      return { coachName };
+    },
     async assignRole(userId, role) {
       result(await service.from('user_roles').insert({ user_id: userId, role }));
     },
@@ -86,10 +101,14 @@ function validateBody(body) {
     propose: ['action', 'coachId', 'athleteId'],
     accept: ['action', 'coachId', 'consent'],
     revoke: ['action', 'coachId', 'athleteId'],
+    create_invite: ['action'],
+    redeem_invite: ['action', 'code', 'consent'],
   };
   requireValue(Object.hasOwn(allowed, body.action));
   requireValue(Object.keys(body).every(key => allowed[body.action].includes(key)));
   if (body.action === 'assign_role') requireValue(uuid(body.userId) && ['coach', 'athlete'].includes(body.role));
+  else if (body.action === 'create_invite') return;
+  else if (body.action === 'redeem_invite') requireValue(normalizeInvitationCode(body.code) && body.consent === true);
   else {
     requireValue(uuid(body.coachId));
     if (body.action === 'accept') requireValue(body.consent === true);
@@ -122,7 +141,8 @@ export function createTeamHandler({ env = process.env, authenticate = authentica
         try { body = JSON.parse(text); } catch { throw new TeamError(400, 'invalid_request'); }
         validateBody(body);
         if (['assign_role', 'propose'].includes(body.action)) requireValue(roles.includes('admin'), 403, 'access_denied');
-        if (body.action === 'accept') requireValue(roles.includes('athlete'), 403, 'access_denied');
+        if (body.action === 'accept' || body.action === 'redeem_invite') requireValue(roles.includes('athlete'), 403, 'access_denied');
+        if (body.action === 'create_invite') requireValue(roles.includes('coach'), 403, 'access_denied');
         if (body.action === 'revoke') requireValue(roles.includes('admin')
           || (roles.includes('coach') && actor.id === body.coachId)
           || (roles.includes('athlete') && actor.id === body.athleteId), 403, 'access_denied');
@@ -135,6 +155,14 @@ export function createTeamHandler({ env = process.env, authenticate = authentica
         const relations = await repository.relationships({ id: actor.id, role: view }, page);
         const directory = view === 'admin' ? await repository.directory(page) : { people: [], morePeople: false };
         return new Response(JSON.stringify({ ...directory, ...relations, page, view }), { headers });
+      }
+      if (body.action === 'create_invite') {
+        const invite = await repository.createInvitation(actor.id);
+        return new Response(JSON.stringify({ ok: true, ...invite }), { headers });
+      }
+      if (body.action === 'redeem_invite') {
+        const linked = await repository.redeemInvitation(actor.id, body.code);
+        return new Response(JSON.stringify({ ok: true, ...linked }), { headers });
       }
       if (body.action === 'assign_role') await repository.assignRole(body.userId, body.role);
       if (body.action === 'propose') await repository.propose(body.coachId, body.athleteId);

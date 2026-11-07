@@ -4,6 +4,9 @@ const messages = {
   state_conflict: 'El estado ha cambiado o ya existe esta vinculación. Actualiza la página.',
   invalid_request: 'Revisa los datos de la solicitud.',
   team_not_enabled: 'La gestión de vinculaciones aún no está habilitada.',
+  invite_invalid: 'Este código no es válido, ha caducado o ya se ha utilizado. Pide otro al entrenador.',
+  invite_limit: 'Ya tienes cinco invitaciones pendientes. Espera a que se utilicen o caduquen.',
+  already_linked: 'Ya estás vinculado con este entrenador.',
 };
 export async function requestTeam(client, body = null, page = 0, fetcher = fetch, workspace = null) {
   const { data, error } = await client.auth.getSession();
