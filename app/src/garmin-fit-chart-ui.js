@@ -8,7 +8,8 @@ const svgNode=(doc,tag,attributes={})=>{const n=doc.createElementNS(NS,tag);
  for(const [key,value] of Object.entries(attributes))n.setAttribute(key,String(value));return n;};
 export function mountFitCharts(root,charts,{records=null,startTime=null}={}){
  root.replaceChildren();
- if(!Array.isArray(charts)||!charts.length)return;
+ if(!Array.isArray(charts))return;
+ if(!charts.length){renderMeasuredMinuteOverlay(root,records,startTime);return;}
  const doc=root.ownerDocument;
  const heading=create(doc,'h5','Curvas de datos registrados');
  const note=create(doc,'p','La gráfica simplifica solamente el dibujo para que sea legible. Todos los registros FIT siguen disponibles sin recortes en el selector inferior.');
