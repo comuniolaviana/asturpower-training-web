@@ -4,7 +4,7 @@ import {JSDOM} from 'jsdom';
 import {Encoder,Profile} from '@garmin/fitsdk';
 import {buildSportSeries,renderSportSeries} from '../app/src/garmin-sports-series.js';
 import {decodeSportXml} from '../app/src/garmin-xml-sports.js';
-import {analyzeFitBytes,analyzeFitDecoded,ftpForDate,resolveHistoricalTss,activityCalendarDate} from '../app/src/garmin-fit-analysis.js';
+import {analyzeFitBytes,analyzeFitDecoded,ftpForDate,resolveHistoricalTss,activityCalendarDate,matchFitActivity} from '../app/src/garmin-fit-analysis.js';
 test('all measured sport samples, zeros, missing fields, laps and timing survive, without account identity or location',()=>{
  const decoded={messages:{recordMesgs:Array.from({length:230},(_,i)=>({timestamp:new Date(1700000000000+i*1000),power:i===0?0:i,heartRate:i%2?130:undefined,positionLat:1234,positionLong:5678,serialNumber:999,temperature:21})),lapMesgs:[{totalTimerTime:230,totalDistance:3000,startPositionLat:1234}]}};
  const series=buildSportSeries(decoded);assert.equal(series.rows.length,230);assert.ok(series.fields.includes('temperature'));assert.equal(series.rows[0][series.fields.indexOf('power')],0);assert.equal(series.rows[0][series.fields.indexOf('heartRate')],null);assert.doesNotMatch(JSON.stringify(series),/position|serialNumber/);
@@ -37,4 +37,18 @@ test('TCX with lap measurements but no Trackpoints retains actual laps and never
  const root=dom.window.document.querySelector('main');renderSportSeries(root,series);assert.equal(root.querySelector('svg'),null);assert.match(root.textContent,/no muestras por segundo/);assert.equal([...root.querySelectorAll('summary')].some(e=>e.textContent==='Todos los registros deportivos'),false);
  const detail=root.querySelector('.activity-laps');detail.open=true;detail.dispatchEvent(new dom.window.Event('toggle'));assert.match(detail.textContent,/133 lpm/);assert.match(root.textContent,/158/);
  dom.window.close();
+});
+test('TCX sport mismatch requires a unique exact session fingerprint and remains explicit in shared data',()=>{
+ const fit={source_format:'TCX',sport:'running',started_at:'2021-04-01T10:00:00Z',timer_seconds:3600,distance_meters:30000};
+ const activity={id:'fictional',sport:'cycling',started_at:fit.started_at,duration_seconds:3600,distance_meters:30000};
+ const match=matchFitActivity(fit,[activity]);assert.equal(match.method,'tcx_exact_metadata');assert.equal(match.activity,activity);
+ assert.equal(matchFitActivity({...fit,source_format:'FIT'},[activity]),null);
+ assert.equal(matchFitActivity(fit,[{...activity,started_at:'2021-04-01T10:00:03Z'}]),null);
+ assert.equal(matchFitActivity(fit,[{...activity,duration_seconds:3500}]),null);
+ assert.equal(matchFitActivity(fit,[{...activity,distance_meters:30100}]),null);
+ assert.equal(matchFitActivity(fit,[activity,{...activity,id:'another'}]),null);
+ assert.equal(matchFitActivity({...fit,distance_meters:0},[{...activity,distance_meters:0}]),null);
+ const decoded={matchMethod:match.method,messages:{sessionMesgs:[{sport:'running'}],recordMesgs:[{timestamp:new Date(fit.started_at),heartRate:130}]}};
+ const series=buildSportSeries(decoded),dom=new JSDOM('<main></main>'),root=dom.window.document.querySelector('main');renderSportSeries(root,series);
+ assert.match(root.textContent,/deporte indicado en el TCX difiere/);assert.equal(series.sessions[0].sport,'running');dom.window.close();
 });

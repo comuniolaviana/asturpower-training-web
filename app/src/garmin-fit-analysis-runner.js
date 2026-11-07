@@ -115,6 +115,7 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
    }
    if(analysis){
     const matched=matchFitActivity(analysis,activities);
+    if(decoded&&matched?.method)decoded.matchMethod=matched.method;
     reason=matched?'already_linked':activities.filter(a=>matchFitActivity(analysis,[a])).length>1?'ambiguous_match':'no_match';
     activityId=matched?.activity.id||null;
     if(matched&&!knownActivityIds.has(matched.activity.id)){

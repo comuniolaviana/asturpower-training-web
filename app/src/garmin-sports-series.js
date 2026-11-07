@@ -20,7 +20,7 @@ export function buildSportSeries(decoded){
  const hasLaps=(decoded.messages.lapMesgs||[]).some(l=>typeof l.totalTimerTime==='number'&&l.totalTimerTime>0&&Number.isFinite(new Date(l.startTime).getTime()));
  if((!source.length&&!hasLaps)||source.length>250000)throw new Error('La actividad requiere revisar el tamaño de sus series. El FIT original se conserva.');
  const records=source.map(sportMessage),fields=[...new Set(records.flatMap(r=>Object.keys(r)))].sort();
- return {version:1,warningCount:decoded.warningCount||0,fields,rows:records.map(r=>fields.map(k=>r[k]??null)),
+ return {version:1,warningCount:decoded.warningCount||0,...(decoded.matchMethod==='tcx_exact_metadata'?{matchMethod:'tcx_exact_metadata'}:{}),fields,rows:records.map(r=>fields.map(k=>r[k]??null)),
   sessions:(decoded.messages.sessionMesgs||[]).map(sportMessage),laps:(decoded.messages.lapMesgs||[]).map(sportMessage),
   events:(decoded.messages.eventMesgs||[]).map(sportMessage)};
 }
@@ -71,6 +71,7 @@ export function renderSportSeries(root,data,{ftp=null,bounds=null}={}){
  root.append(el('p',records.length.toLocaleString('es-ES')+' registros conservados · '+data.fields.length+' campos deportivos · '+(data.laps||[]).length+' vueltas. Los huecos permanecen vacíos; no se rellenan muestras.'));
  if(!records.length)root.append(el('p','Este original conserva datos por vueltas, pero no muestras por segundo. Puedes consultar las vueltas y sus medidas; no hay curvas de pulso ni potencia instantánea.'));
  if(data.warningCount)root.append(el('p','Lectura parcial: el SDK comunicó '+data.warningCount+' avisos. Se muestran los campos interpretados; el FIT original conserva el contenido completo.'));
+ if(data.matchMethod==='tcx_exact_metadata')root.append(el('p','El deporte indicado en el TCX difiere del calendario. Se ha vinculado por una coincidencia única de fecha exacta, duración y distancia. Se conserva la etiqueta deportiva original del archivo.'));
  const session=data.sessions?.[0]||{},format=(v,unit='',factor=1)=>typeof v==='number'&&Number.isFinite(v)?(v*factor).toLocaleString('es-ES',{maximumFractionDigits:1})+unit:'—';
  const extra=el('dl');extra.className='ap-activity-metrics';
  for(const [label,value,unit,factor] of [['Tiempo en movimiento',session.totalMovingTime,' min',1/60],['Tiempo transcurrido',session.totalElapsedTime,' min',1/60],['Velocidad media',session.enhancedAvgSpeed??session.avgSpeed,' km/h',3.6],['Velocidad máxima',session.enhancedMaxSpeed??session.maxSpeed,' km/h',3.6],['Pulso máximo',session.maxHeartRate,' lpm',1],['Potencia máxima',session.maxPower,' W',1],['Cadencia media',session.avgCadence,' rpm',1],['Cadencia máxima',session.maxCadence,' rpm',1],['Calorías',session.totalCalories,' kcal',1],['Trabajo',session.totalWork,' kJ',1/1000],['Temperatura media',session.avgTemperature,' °C',1],['Ascenso',session.totalAscent,' m',1],['Descenso',session.totalDescent,' m',1]]){

@@ -95,7 +95,19 @@ export function matchFitActivity(fit,activities){
   }
   return true;
  });
- if(candidates.length!==1)return null;
+ if(candidates.length!==1){
+  // Some historic TCX exports retain an obsolete Sport attribute. Only an
+  // exact, unique session fingerprint can override that label for linking.
+  if(candidates.length||fit.source_format!=='TCX'||!(fit.distance_meters>0))return null;
+  const strict=activities.filter(a=>{
+   const seconds=Number(a.duration_seconds),meters=Number(a.distance_meters),ms=Date.parse(a.started_at);
+   return Number.isFinite(ms)&&Math.abs(ms-fitMs)<=1000&&seconds>0&&meters>0&&
+    Math.abs(seconds-fit.timer_seconds)<=Math.max(15,seconds*0.001)&&
+    Math.abs(meters-fit.distance_meters)<=Math.max(2,meters*0.0001);
+  });
+  if(strict.length!==1)return null;
+  return {activity:strict[0],offset_seconds:Math.round(Math.abs(Date.parse(strict[0].started_at)-fitMs)/1000),method:'tcx_exact_metadata'};
+ }
  return {activity:candidates[0],offset_seconds:Math.round(Math.abs(Date.parse(candidates[0].started_at)-fitMs)/1000)};
 }
 export function ftpForDate(versions,date){
@@ -122,7 +134,7 @@ export function derivedFitRow(fit,matched,ftpVersions,{athleteId,archiveId,packN
   intensity_factor:intensity===null?null:Number(intensity.toFixed(4)),
   tss:tss===null?null:Number(tss.toFixed(3)),
   device_intensity_factor:fit.device_intensity_factor??null,device_tss:fit.device_tss??null,device_ftp_watts:fit.device_ftp_watts??null,
-  measurement_source:'unverified',source_format:fit.source_format||'FIT',np_method:fit.np_method||null,calculation_version:FIT_ANALYSIS_VERSION};
+  measurement_source:matched.method||'unverified',source_format:fit.source_format||'FIT',np_method:fit.np_method||null,calculation_version:FIT_ANALYSIS_VERSION};
 }
 // Partial load model. No zero-TSS inference for days with unprocessed rides.
 export function partialLoadCurve(rows,{from,to}={}){
