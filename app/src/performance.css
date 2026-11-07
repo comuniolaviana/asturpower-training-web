@@ -1,2 +1,24 @@
 .perf-space{display:grid;gap:24px;min-width:0}.perf-intro h2{font-size:28px;margin:10px 0}.perf-space p{line-height:1.65}.perf-card{background:#fff;border:1px solid #dfe5dd;border-radius:20px;padding:28px;min-width:0}.perf-card h3{margin:0 0 14px;font-size:21px}.perf-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.perf-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:20px 0}.perf-field{display:flex;flex-direction:column;gap:8px;font-size:13px;font-weight:600;min-width:0}.perf-field input,.perf-field select,.perf-field textarea{font:inherit;color:#202b24;background:#fff;border:1px solid #bfcabe;border-radius:9px;padding:12px;width:100%;min-width:0;box-sizing:border-box}.perf-field textarea{resize:vertical;line-height:1.6}.perf-note{font-size:13px;color:#536150;background:#f2f5ef;padding:14px;border-radius:10px}.perf-result{font-size:20px;margin-top:24px}.perf-result strong{color:#28523a}.perf-scroll{overflow:auto;margin-top:16px;max-height:420px}.perf-space table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}.perf-space th,.perf-space td{text-align:left;padding:12px;border-bottom:1px solid #e5e9e1}.perf-space th{background:#f1f5ee}.perf-space caption{text-align:left;margin-bottom:12px;color:#56634f}.perf-space summary{cursor:pointer;padding:12px 0;font-weight:600}.perf-chart{display:block;width:100%;height:auto;min-height:200px}.perf-ctl{stroke:#2378b8}.perf-atl{stroke:#9850b8}.perf-tsb{stroke:#bc7800}.perf-space [hidden]{display:none!important}.perf-space button:disabled{opacity:.55;cursor:wait}.perf-space [role=status]:not(:empty){padding:12px 0;line-height:1.6}@media(max-width:1050px){.perf-grid{grid-template-columns:1fr}}@media(max-width:600px){.perf-card{padding:18px;border-radius:14px}.perf-fields{grid-template-columns:1fr;gap:14px}.perf-space .button{width:100%;white-space:normal;min-height:48px}.perf-intro h2{font-size:23px}}
 .perf-field input{margin-bottom:0}.perf-field select:focus-visible,.perf-field textarea:focus-visible{outline:3px solid #729935;outline-offset:3px}.perf-chart text{stroke:none}
+
+
+/* Activity curves are shared between the authorised coach and the athlete. */
+.garmin-fit-chart{display:block;width:100%;height:auto;max-width:980px;margin:14px 0 18px;background:#f8fbf9;border:1px solid #d7e5d9;border-radius:12px;stroke:none;fill:none}
+.garmin-fit-chart-note{font-size:12px;line-height:1.55;color:#456258}
+.garmin-minute-overlay{margin:22px 0 30px;padding:18px;background:#fff;border:1px solid #dce7db;border-radius:14px;max-width:100%;min-width:0}
+.garmin-minute-overlay h5{font-size:17px;margin:0 0 12px}
+.garmin-minute-metrics{border:1px solid #dae5d9;border-radius:12px;padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:12px 0;min-width:0}
+.garmin-minute-metrics legend{font-weight:700;font-size:13px;padding:0 8px;color:#254a3b}
+.garmin-minute-metrics label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;line-height:1.3;margin:0;padding:6px 4px;min-width:0}
+.garmin-minute-metrics input[type=checkbox]{display:inline-block;flex:none;width:18px;height:18px;min-height:18px;margin:0;padding:0;accent-color:#176a4c}
+.garmin-minute-overlay>label{display:block;margin:12px 0 4px;font-size:13px}
+.garmin-minute-overlay input[type=number]{width:min(180px,100%);margin:0 0 10px}
+.garmin-minute-overlay [data-minute-readout]{font-size:13px;line-height:1.65;color:#214534;overflow-wrap:anywhere}
+.garmin-minute-overlay details{margin-top:18px}
+.garmin-minute-overlay summary{cursor:pointer;min-height:38px;padding:8px 0;font-weight:650}
+.garmin-minute-overlay table{border-collapse:collapse;min-width:100%;width:max-content;font-size:12px}
+.garmin-minute-overlay th,.garmin-minute-overlay td{padding:9px 12px;border-bottom:1px solid #e2e9df;text-align:left;white-space:nowrap}
+.garmin-minute-overlay th{background:#eff5ee}
+.garmin-minute-overlay .perf-scroll{max-width:100%;overflow-x:auto}
+.garmin-minute-overlay .button{min-height:40px;margin-right:8px}
+@media(max-width:600px){.garmin-minute-overlay{padding:12px}.garmin-minute-metrics{grid-template-columns:1fr 1fr;gap:4px}.garmin-minute-metrics label{font-size:11px}.garmin-minute-overlay .button{width:auto}}
