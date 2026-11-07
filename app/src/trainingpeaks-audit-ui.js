@@ -16,6 +16,7 @@ export function mountTrainingPeaksAudit({root,client,coachId,athletes=[],loader=
   athletes.map(a=>'<option value="'+esc(a.user_id)+'">'+esc(a.display_name)+'</option>').join('')+
   '</select></label><label class="perf-field"><span>CSV TrainingPeaks (máximo 4 MB)</span><input data-tp-file type="file" accept=".csv,text/csv" disabled></label></div>'+
   '<p data-tp-status role="status" aria-live="polite">Selecciona un deportista para comprobar permisos.</p><div data-tp-result></div>'+
+  '<p class="perf-note">Utiliza solo exportaciones del deportista seleccionado y con su autorización. No introduzcas contraseñas ni datos de otras personas.</p>'+
   '<p class="perf-note">Solo se usa TssActual, nunca TssPlanned. El emparejamiento requiere misma fecha, deporte y duración cercana. Las coincidencias ambiguas quedan sin asociar. Una comparación favorable no certifica un historial completo.</p></section>';
  const $=s=>root.querySelector(s),athlete=$('[data-tp-athlete]'),file=$('[data-tp-file]'),status=$('[data-tp-status]'),view=$('[data-tp-result]');
  const clear=()=>{file.value='';file.disabled=true;view.replaceChildren();details=null;};
