@@ -1,6 +1,7 @@
 import {SPORTS,physiologyAt,estimatedLoad,parseScenario,simulatePMC} from './performance.js';
 import {loadPhysiology,savePhysiology} from './performance-data.js';
 import {mountCoachFitDashboard} from './coach-fit-dashboard.js';
+import {mountPMC} from './pmc-ui.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=value=>value===null||value===undefined?'Sin dato':Number(value).toLocaleString('es',{maximumFractionDigits:2});
 const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');};
@@ -9,7 +10,8 @@ const fields=[['ftp','FTP (W)',1,2500],['lthr','Pulso umbral (lpm)',30,250],['hr
 export async function mountPerformance({root,client,user,role,athletes=[]}) {
   if(role!=='coach'){root.replaceChildren();return;}
   let rows=[],ticket=0,selected='',truncated=false;
-  root.innerHTML=`<div class="perf-space"><div class="perf-intro"><span class="eyebrow">HERRAMIENTAS DEL ENTRENADOR</span><h2>Rendimiento y planificación</h2><p>Configura la ficha deportiva de tu equipo y explora escenarios antes de planificar.</p></div>
+  root.innerHTML=`<div class="perf-space">
+  <div data-coach-pmc></div>
   <section class="perf-card"><h3>Ficha deportiva e historial de umbrales</h3><p>Solo tus deportistas con vinculación activa. Cada guardado conserva una versión completa desde su fecha de vigencia.</p>
   <div class="perf-fields"><label class="perf-field"><span>Deportista</span><select data-perf-athlete><option value="">Selecciona un deportista</option>${athletes.map(a=>`<option value="${esc(a.user_id)}">${esc(a.display_name)}</option>`).join('')}</select></label><label class="perf-field"><span>Deporte de la ficha</span><select data-perf-sport>${Object.entries(SPORTS).map(([key,label])=>`<option value="${key}">${label}</option>`).join('')}</select></label></div>
   ${!athletes.length?'<p class="perf-note">Aún no tienes deportistas vinculados. Las calculadoras de abajo ya están disponibles.</p>':''}
@@ -24,6 +26,7 @@ export async function mountPerformance({root,client,user,role,athletes=[]}) {
   <form data-perf-scenario><div class="perf-fields">${field('start','Primer día',{type:'date',value:today(),required:true})}${field('days','Horizonte (días)',{min:7,max:90,step:1,value:42,required:true})}${field('ctl','CTL al terminar el día anterior',{min:0,max:5000,required:true})}${field('atl','ATL al terminar el día anterior',{min:0,max:5000,required:true})}</div><label class="perf-field"><span>Sesiones previstas: una por línea, fecha; carga estimada</span><textarea name="loads" rows="5" maxlength="8000" placeholder="AAAA-MM-DD; 72.25"></textarea></label><p class="perf-note">Los días sin sesiones se simulan como descanso (carga 0). Puedes usar 0 como inicio si eliges explícitamente partir de cero. La simulación solo dura en esta pantalla.</p><button class="button secondary" type="submit">Calcular escenario</button></form><p data-perf-scenario-message role="status" aria-live="polite"></p></section></div>
   <section class="perf-card" data-perf-chart hidden><h3>Proyección del escenario</h3><p>CTL: azul · ATL: violeta · TSB: ámbar. CTL usa 42 días y ATL 7; el TSB de cada fecha usa el CTL y ATL del día anterior. Estas cifras no diagnostican sobreentrenamiento.</p><div data-perf-svg></div><details><summary>Consultar valores por día</summary><div class="perf-scroll" data-perf-days></div></details></section>
   <div data-coach-fit-dashboard></div></div>`;
+  mountPMC({root:root.querySelector('[data-coach-pmc]'),client,coachId:user.id,athletes});
   mountCoachFitDashboard({root:root.querySelector('[data-coach-fit-dashboard]'),client,coachId:user.id,athletes});
   const $=s=>root.querySelector(s),profile=$('[data-perf-profile]'),sport=$('[data-perf-sport]'),status=$('[data-perf-status]');
   const alive=t=>root.isConnected&&ticket===t;

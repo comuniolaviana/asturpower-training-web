@@ -41,6 +41,11 @@ export function validateWorkout(values) {
   const total=steps ? Math.ceil(stepsTotalSeconds(steps)/60) : duration;
   const result={title,duration_minutes:total,scheduled_date,sport,intensity_target:intensity_target||null,coach_notes:coach_notes||null};
   if(hasSteps)result.steps=steps;
+  if(Object.hasOwn(values,'estimated_tss')){
+    const raw=values.estimated_tss,value=raw===null||raw===undefined||String(raw).trim()===''?null:Number(raw);
+    if(value!==null&&(!Number.isFinite(value)||value<0||value>5000))throw new Error('La carga prevista debe estar entre 0 y 5.000 TSS.');
+    result.estimated_tss=value;
+  }
   return result;
 }
 
@@ -115,7 +120,7 @@ export async function mountPlanner({root,client,user,role,initialDate}) {
     try {
       const [start,end]=range();
       const result=await client.from('planned_workouts')
-        .select('id,coach_id,athlete_id,scheduled_date,sport,title,duration_minutes,intensity_target,coach_notes,status,steps')
+        .select('id,coach_id,athlete_id,scheduled_date,sport,title,duration_minutes,intensity_target,coach_notes,status,steps,estimated_tss')
         .eq(role==='coach'?'coach_id':'athlete_id',user.id)
         .gte('scheduled_date',start).lt('scheduled_date',end)
         .order('scheduled_date',{ascending:true});
@@ -226,6 +231,7 @@ export async function mountPlanner({root,client,user,role,initialDate}) {
       const name=athletes.find(a=>a.id===w.athlete_id)?.name;
       card.append(node('p','', (SPORTS[w.sport]||'Deporte')+' · '+w.duration_minutes+' min'+(name?' · '+name:'')));
       if(w.intensity_target)card.append(node('p','','Objetivo: '+w.intensity_target));
+      if(w.estimated_tss!==null&&w.estimated_tss!==undefined)card.append(node('p','','Carga prevista: '+Number(w.estimated_tss).toLocaleString('es-ES')+' TSS'));
       if(w.coach_notes)card.append(node('p','','Indicaciones: '+w.coach_notes));
       if(Array.isArray(w.steps) && w.steps.length){
         const blocks=node('div','ap-workout-blocks');
@@ -360,6 +366,7 @@ export async function mountPlanner({root,client,user,role,initialDate}) {
     }
     sport.value=current?.sport||'cycling';
     const target=fieldInput('intensity_target','text','Zona 2 de potencia',180);target.value=current?.intensity_target||'';
+    const load=fieldInput('estimated_tss','number','Opcional: p. ej., 65');load.min='0';load.max='5000';load.step='0.1';load.value=current?.estimated_tss??'';
     const notes=node('textarea','ap-input');notes.name='coach_notes';notes.maxLength=3000;notes.rows=3;notes.placeholder='Indicaciones del entrenador…';notes.value=current?.coach_notes||'';
     const save=node('button','ap-save',current?'Guardar cambios':'Guardar entrenamiento');save.type='submit';
     const status=node('p','ap-status');status.setAttribute('role','status');
@@ -373,14 +380,14 @@ export async function mountPlanner({root,client,user,role,initialDate}) {
         duration.title='';
       }
     });
-    form.append(labelled('Deportista',athlete),labelled('Fecha',date),labelled('Título',name),labelled('Duración (minutos)',duration),labelled('Deporte',sport),labelled('Objetivo',target),labelled('Indicaciones',notes),stepsEditor.element,save,status);
+    form.append(labelled('Deportista',athlete),labelled('Fecha',date),labelled('Título',name),labelled('Duración (minutos)',duration),labelled('Deporte',sport),labelled('Objetivo',target),labelled('Carga prevista (TSS) · para la gráfica de carga, fatiga y forma',load),labelled('Indicaciones',notes),stepsEditor.element,save,status);
     if(current)form.append(button('Cancelar edición','ap-action',()=>{editingId=null;paint();}));
     form.addEventListener('submit',async event=>{
       event.preventDefault();
       if(busy)return;
       busy=true;save.disabled=true;status.textContent='Guardando…';
       try{
-        const payload=validateWorkout({title:name.value,scheduled_date:date.value,duration_minutes:duration.value,sport:sport.value,intensity_target:target.value,coach_notes:notes.value,steps:stepsEditor.getSteps()});
+        const payload=validateWorkout({title:name.value,scheduled_date:date.value,duration_minutes:duration.value,sport:sport.value,intensity_target:target.value,coach_notes:notes.value,steps:stepsEditor.getSteps(),estimated_tss:load.value});
         if(current){
           await updatePlannedWorkout(client,user.id,current.id,payload);
         }else{

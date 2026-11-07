@@ -1,0 +1,13 @@
+# Carga, fatiga y forma del deportista
+
+Acceso: entrenador → Rendimiento → Carga, fatiga y forma. Seleccionar deportista; historial visible de 30, 90, 180 o 365 días y previsión de 1 a 90 días, inicialmente 21. Tarjetas de hoy y fecha objetivo; tocar el gráfico o seleccionar una fecha para consultar valores y sesiones. CTL/ATL en eje izquierdo, TSB en derecho; futuro discontinuo. Descanso completo es un escenario local que no cambia el calendario.
+
+Datos: actividades recibidas hasta hoy (Europe/Madrid), métricas FIT autorizadas y FTP históricos confirmados mediante `resolveHistoricalTss`. No se descargan originales, GPS ni series para este gráfico. Se comprueban sesión, vínculo activo y permiso FIT antes de consultar, y se revalidan después. Las lecturas se paginan y se delimitan por deportista; planificación además por entrenador. Un resultado antiguo no puede repintar otra selección ni una pantalla abandonada.
+
+Modelo: CTL diario = CTL anterior + (TSS diario − CTL anterior)/42; ATL con divisor 7; TSB = CTL anterior − ATL anterior. Inicio en cero antes de la primera actividad recibida. El historial visible nunca reinicia el cálculo. Los días sin actividades recibidas no aportan carga; las actividades sin TSS se cuentan como desconocidas y hacen que se rotule el historial como parcial. Las curvas de carga disponible pueden subestimar la carga completa. Si aún no hay TSS, las tarjetas muestran «—».
+
+La previsión empieza mañana: solo sesiones con estado `planned`. Se excluyen planes pasados, de hoy, completados y cancelados para no sumarlos a lo realizado. `estimated_tss`, opcional en Calendario, tiene prioridad (0 es explícito); en su ausencia se estima por bloques ciclistas con objetivos `% FTP` o W y FTP vigente, sumando horas × intensidad media objetivo² × 100. No es NP medida ni una predicción exacta de la carga de una sesión variable. Bloques libres, de pulso o RPE, y otros deportes, requieren carga manual. No se interpreta texto libre ni se aplica FTP actual a fechas pasadas. Las sesiones sin carga se señalan como previsión parcial; días sin sesiones se simulan como descanso.
+
+Validación: equilibrio bajo carga constante, descenso en descanso, TSB de día anterior, suma diaria, zona horaria, independencia del rango visible, proyección del calendario, incógnitas, fechas de FTP, carga manual, escape de nombres y sesión/vínculo/permiso/selecciones asíncronas. Migración aditiva: `20261107150134_coach_pmc_planned_load.sql`, sin cambiar RLS ni permisos.
+
+Fuentes del modelo: https://help.trainingpeaks.com/hc/en-us/articles/204071884-Fitness-CTL y https://help.trainingpeaks.com/hc/en-us/articles/204071764-Form-TSB . Estos indicadores no predicen por sí solos un resultado deportivo.

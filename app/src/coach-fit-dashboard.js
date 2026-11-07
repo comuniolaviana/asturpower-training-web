@@ -6,7 +6,7 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const fmt=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:1});
 const fmtIf=value=>value===null||value===undefined?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:3});
 const date=value=>new Date(value).toLocaleDateString('es-ES');
-export async function loadCoachFitDetails(client,coachId,athleteId){
+export async function loadCoachFitDetails(client,coachId,athleteId,{includeSeries=true}={}){
  const auth=await client.auth.getUser();
  if(auth.error||auth.data?.user?.id!==coachId)throw new Error('La sesión del entrenador ha cambiado.');
  const link=await client.from('coach_athletes').select('athlete_id').eq('coach_id',coachId).eq('athlete_id',athleteId).eq('status','active').limit(1);
@@ -25,16 +25,16 @@ export async function loadCoachFitDetails(client,coachId,athleteId){
  }
  const [activities,metrics,ftpResult]=await Promise.all([
   allRows(()=>client.from('activities').select('id,athlete_id,title,started_at,sport,duration_seconds,distance_meters,elevation_gain_meters,avg_heart_rate,avg_power_watts,source')
-   .eq('athlete_id',athleteId).order('started_at',{ascending:false})),
+   .eq('athlete_id',athleteId).order('started_at',{ascending:false}).order('id')),
   allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,fit_started_at,duration_seconds,sample_count,power_seconds,power_coverage,normalized_power_watts,match_offset_seconds,measurement_source,np_method,device_intensity_factor,device_tss,device_ftp_watts')
-   .eq('athlete_id',athleteId).order('fit_started_at',{ascending:false})),
+   .eq('athlete_id',athleteId).order('fit_started_at',{ascending:false}).order('activity_id')),
   client.from('athlete_physiology').select('id,sport,effective_date,ftp,lthr,hr_max,hr_rest,weight_kg,threshold_pace_seconds,power_zone_bounds,hr_zone_bounds,created_at').eq('athlete_id',athleteId)
    .eq('sport','cycling').order('effective_date',{ascending:false}).limit(500)
  ]);
  if(ftpResult.error)throw new Error('No se pudieron recuperar los FTP históricos del deportista.');
  const physiology=ftpResult.data||[];
  const seriesEnabled=share.data[0].series_enabled===true;
- const series=seriesEnabled?await allRows(()=>client.from('garmin_activity_series').select('activity_id').eq('athlete_id',athleteId).eq('status','ready').order('activity_id')):[];
+ const series=seriesEnabled&&includeSeries?await allRows(()=>client.from('garmin_activity_series').select('activity_id').eq('athlete_id',athleteId).eq('status','ready').order('activity_id')):[];
  return {allowed:true,activities,physiology,seriesEnabled,seriesIds:series.map(r=>r.activity_id),
   metrics:metrics.map(x=>resolveHistoricalTss(x,physiology))};
 }
