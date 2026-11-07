@@ -48,3 +48,19 @@ test('planned load validates edits without clearing existing load from older cal
  assert.equal(validateWorkout({...w,estimated_tss:'0'}).estimated_tss,0);
  for(const v of [-1,5001,'abc',Infinity])assert.throws(()=>validateWorkout({...w,estimated_tss:v}),/carga prevista/);
 });
+
+
+test('180-day TSS audit distinguishes unknown stress from a true rest day and does not certify imports',()=>{
+ const old=activity('old','2025-01-01'),recent=activity('recent','2026-11-06');
+ const partial=buildPMC({activities:[old,recent],metrics:[{activity_id:'old',tss:60}],today});
+ assert.equal(partial.audit.activityCount,1);assert.equal(partial.audit.withTss,0);
+ assert.equal(partial.audit.withoutTss,1);assert.equal(partial.audit.historyBeforeWindow,true);
+ assert.equal(partial.audit.canDisplayModel,false);
+ assert.deepEqual(partial.audit.unresolvedActivities.map(x=>x.id),['recent']);
+ assert.equal(partial.series.find(r=>r.date==='2026-11-06').missing,1);
+ const complete=buildPMC({activities:[old,recent],metrics:[{activity_id:'old',tss:60},{activity_id:'recent',tss:40}],today});
+ assert.equal(complete.audit.withoutTss,0);assert.equal(complete.audit.canDisplayModel,true);
+ const noHistory=buildPMC({activities:[recent],metrics:[{activity_id:'recent',tss:40}],today});
+ assert.equal(noHistory.audit.historyBeforeWindow,false);assert.equal(noHistory.audit.canDisplayModel,false);
+ const noSessions=buildPMC({today});assert.equal(noSessions.audit.canDisplayModel,false);
+});
