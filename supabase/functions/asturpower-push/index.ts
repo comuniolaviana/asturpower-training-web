@@ -5,7 +5,12 @@ const cors={'Access-Control-Allow-Origin':ORIGIN,'Access-Control-Allow-Headers':
 const response=(body:unknown,status=200)=>Response.json(body,{status,headers:cors});
 const uuid=(v:unknown)=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 // Fixed work budget. Never log endpoints, credentials, notification contents or provider errors.
-const secureEqual=(a:string,b:string)=>{let diff=a.length^b.length;for(let i=0;i<b.length;i++)diff|=(a.charCodeAt(i)||0)^b.charCodeAt(i);return diff===0;};
+async function validHook(raw:string,signature:string|null,secret:string,sentAt:unknown){
+ if(!signature||!/^[0-9a-f]{64}$/.test(signature)||typeof sentAt!=='number'||!Number.isSafeInteger(sentAt)||Math.abs(Date.now()/1000-sentAt)>300)return false;
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['verify']);
+ const bytes=Uint8Array.from(signature.match(/../g)!,x=>parseInt(x,16));
+ return crypto.subtle.verify('HMAC',key,bytes,new TextEncoder().encode(raw));
+}
 Deno.serve(async(req:Request)=>{
  if(req.headers.get('origin')&&req.headers.get('origin')!==ORIGIN)return response({error:'invalid_origin'},403);
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
@@ -19,10 +24,12 @@ Deno.serve(async(req:Request)=>{
   if(configError||!config)return response({error:'unavailable'},503);
   if(!config.public_key){const keys=webpush.generateVAPIDKeys();const saved=await db.rpc('server_push_keys',{pub:keys.publicKey,priv:keys.privateKey});if(saved.error)throw Error();config=saved.data;}
   if(req.method==='GET')return response({publicKey:config.public_key});
-  const body=await req.json();
-  // Database webhook uses a private random secret. User requests verify JWT with Auth.
+  const raw=await req.text();if(raw.length>4096)return response({error:'invalid_request'},400);
+  const body=JSON.parse(raw);
+  // Database webhook verifies a five-minute HMAC signature; the key never enters pg_net.
+  // User requests independently verify JWT with Auth.
   const hook=req.headers.get('x-asturpower-hook');
-  if(!hook||hook.length!==config.hook_secret.length||!secureEqual(hook,config.hook_secret)){
+  if(!await validHook(raw,hook,config.hook_secret,body.sent_at)){
    const token=req.headers.get('authorization')?.replace(/^Bearer /i,'');
    if(!token)return response({error:'unauthorized'},401);
    const {data:auth,error}=await db.auth.getUser(token);
