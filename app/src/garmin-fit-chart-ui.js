@@ -1,4 +1,4 @@
-import {measuredMinutes,MINUTE_METRICS,OVERLAY_METRICS} from './garmin-fit-charts.js';
+import {measuredMinutes,measuredMinuteSamples,MINUTE_METRICS,OVERLAY_METRICS} from './garmin-fit-charts.js';
 // The visible lines are a bounded graphical representation only.
 // All FIT records remain intact in the decoding worker and can be paged below.
 const NS='http://www.w3.org/2000/svg';
@@ -8,7 +8,8 @@ const svgNode=(doc,tag,attributes={})=>{const n=doc.createElementNS(NS,tag);
  for(const [key,value] of Object.entries(attributes))n.setAttribute(key,String(value));return n;};
 export function mountFitCharts(root,charts,{records=null,startTime=null}={}){
  root.replaceChildren();
- if(!Array.isArray(charts)||!charts.length)return;
+ if(!Array.isArray(charts))return;
+ if(!charts.length){renderMeasuredMinuteOverlay(root,records,startTime);return;}
  const doc=root.ownerDocument;
  const heading=create(doc,'h5','Curvas de datos registrados');
  const note=create(doc,'p','La gráfica simplifica solamente el dibujo para que sea legible. Todos los registros FIT siguen disponibles sin recortes en el selector inferior.');
@@ -107,7 +108,7 @@ export function renderMeasuredMinuteOverlay(root,records,startTime=null){
  const doc=root.ownerDocument,section=create(doc,'section');
  section.className='garmin-minute-overlay';
  section.append(create(doc,'h5','Pulso, potencia y cadencia · superponer datos minuto a minuto'));
- const note=create(doc,'p','Marca las métricas que quieras comparar. Se usan los valores realmente registrados, sin interpolar huecos. Cada curva tiene escala vertical propia; la distancia acumulada y las calorías muestran el último valor medido de cada minuto.');
+ const note=create(doc,'p','Marca las métricas que quieras comparar. La gráfica general muestra la evolución por minutos; selecciona un minuto para ampliar sus mediciones reales por segundo. No interpolamos huecos ni confundimos escalas de pulso, potencia y cadencia.');
  note.className='garmin-fit-chart-note';section.append(note);
  const availableKeys=new Set(available.map(metric=>metric.key));
  const selected=new Set(MINUTE_METRICS.map(metric=>metric.key).filter(key=>availableKeys.has(key)));
@@ -136,6 +137,122 @@ export function renderMeasuredMinuteOverlay(root,records,startTime=null){
  input.setAttribute('aria-label','Consultar promedios medidos en un minuto');input.setAttribute('data-minute-control','');
  label.append(input);section.append(label);
  const readout=create(doc,'p');readout.setAttribute('role','status');readout.setAttribute('data-minute-readout','');section.append(readout);
+ // Drill down into the same selected 60-second window using original samples.
+ const zoom=create(doc,'section');zoom.className='garmin-minute-zoom';
+ const zoomTitle=create(doc,'h6','Detalle del minuto, segundo a segundo');
+ const zoomNote=create(doc,'p','Cada punto corresponde a una muestra del FIT. Solo se unen puntos consecutivos separados como máximo 1,5 segundos; los huecos se dejan vacíos.');
+ zoomNote.className='garmin-fit-chart-note';
+ const zoomSvg=svgNode(doc,'svg',{viewBox:'0 0 760 250',role:'img','aria-label':'Curvas superpuestas de muestras reales del minuto seleccionado'});
+ zoomSvg.classList.add('garmin-fit-chart');zoomSvg.setAttribute('data-second-overlay','');
+ const zoomStatus=create(doc,'p');zoomStatus.setAttribute('role','status');zoomStatus.setAttribute('data-second-status','');
+ const sampleLabel=create(doc,'label','Recorrer registros exactos del minuto');
+ const sampleControl=create(doc,'input');sampleControl.type='range';sampleControl.min='0';sampleControl.max='0';sampleControl.step='1';sampleControl.value='0';
+ sampleControl.setAttribute('aria-label','Recorrer muestras realmente grabadas dentro del minuto');
+ sampleControl.setAttribute('data-second-control','');
+ sampleLabel.append(sampleControl);
+ const sampleReadout=create(doc,'p');sampleReadout.setAttribute('role','status');sampleReadout.setAttribute('data-second-readout','');
+ const rawDetails=create(doc,'details'),rawSummary=create(doc,'summary','Ver muestras originales de este minuto');
+ const rawHost=create(doc,'div');rawHost.className='perf-scroll';rawDetails.append(rawSummary,rawHost);
+ zoom.append(zoomTitle,zoomNote,zoomSvg,zoomStatus,sampleLabel,sampleReadout,rawDetails);
+ section.append(zoom);
+ let zoomSamples=[],samplePage=0;
+ function showSample(index){
+  if(!zoomSamples.length){sampleReadout.textContent='Sin muestras registradas para este minuto.';return;}
+  const at=Math.max(0,Math.min(zoomSamples.length-1,Math.round(index)));
+  const row=zoomSamples[at];sampleControl.value=String(at);
+  const parts=['Muestra real · segundo '+row.second.toLocaleString('es-ES',{maximumFractionDigits:3})+' · '+new Date(row.timestamp).toLocaleTimeString('es-ES')];
+  for(const metric of available.filter(m=>selected.has(m.key))){
+   const value=row.values[metric.key];
+   parts.push(metric.label+': '+(value===null?'sin registro en esta muestra':format(value,metric.unit)));
+  }
+  sampleReadout.textContent=parts.join(' · ');
+ }
+ sampleControl.addEventListener('input',()=>showSample(Number(sampleControl.value)));
+ function drawRaw(){
+  if(!rawDetails.open)return;
+  rawHost.replaceChildren();
+  const picked=available.filter(m=>selected.has(m.key)),table=create(doc,'table'),head=create(doc,'tr'),thead=create(doc,'thead'),tbody=create(doc,'tbody');
+  for(const heading of ['Segundo registrado',...picked.map(m=>m.label+' ('+m.unit+')')])head.append(create(doc,'th',heading));
+  thead.append(head);table.append(thead);
+  const from=samplePage*100,to=Math.min(zoomSamples.length,from+100);
+  for(const row of zoomSamples.slice(from,to)){
+   const tr=create(doc,'tr');tr.append(create(doc,'td',row.second.toLocaleString('es-ES',{maximumFractionDigits:3})+' s'));
+   for(const metric of picked)tr.append(create(doc,'td',format(row.values[metric.key],metric.unit)));
+   tbody.append(tr);
+  }
+  table.append(tbody);rawHost.append(table);
+  rawHost.append(create(doc,'p','Registros '+(zoomSamples.length?from+1:0)+'–'+to+' de '+zoomSamples.length+'.'));
+  for(const [label,offset] of [['Anterior',-1],['Siguiente',1]]){
+   const button=create(doc,'button',label);button.type='button';button.className='button secondary';
+   button.disabled=samplePage+offset<0||(samplePage+offset)*100>=zoomSamples.length;
+   button.addEventListener('click',()=>{samplePage+=offset;drawRaw();});rawHost.append(button);
+  }
+ }
+ rawDetails.addEventListener('toggle',drawRaw);
+ function drawZoom(){
+  const minute=Number(input.value);
+  zoomSvg.replaceChildren();
+  if(!Number.isSafeInteger(minute)||minute<0||minute>maxMinute){
+   zoomStatus.textContent='Selecciona un minuto válido para consultar sus segundos.';
+   zoomSamples=[];sampleLabel.hidden=true;sampleReadout.textContent='';drawRaw();return;
+  }
+  zoomTitle.textContent='Minuto '+minute+' · detalle segundo a segundo';
+  zoomSamples=measuredMinuteSamples(records,startTime,minute,available);
+  samplePage=0;
+  sampleLabel.hidden=!zoomSamples.length;
+  sampleControl.max=String(Math.max(0,zoomSamples.length-1));sampleControl.value='0';
+  zoomStatus.textContent=zoomSamples.length
+   ? zoomSamples.length+' registros reales en el minuto '+minute+'. Cada sensor solo aparece donde realmente fue medido.'
+   : 'El minuto '+minute+' no contiene muestras grabadas. No se ha calculado ni interpolado ninguna curva.';
+  const zx=second=>50+Math.max(0,Math.min(1,second/60))*695;
+  const zTop=20,zBottom=207,zHeight=zBottom-zTop;
+  for(let i=0;i<=4;i++){
+   const y=zTop+zHeight*i/4;zoomSvg.append(svgNode(doc,'line',{x1:50,x2:745,y1:y,y2:y,stroke:'#bac8c1','stroke-width':1,'stroke-opacity':'.6'}));
+  }
+  for(const second of [0,15,30,45,60]){
+   const mark=svgNode(doc,'text',{x:zx(second),y:237,'text-anchor':second===0?'start':second===60?'end':'middle','font-size':13,fill:'#345a49'});
+   mark.textContent=second+' s';zoomSvg.append(mark);
+  }
+  const picked=available.filter(m=>selected.has(m.key));
+  for(const metric of picked){
+   const colored=zoomSamples.filter(row=>row.values[metric.key]!==null);
+   if(!colored.length)continue;
+   const values=colored.map(row=>row.values[metric.key]),min=Math.min(...values),max=Math.max(...values);
+   const zy=value=>zTop+zHeight*(.85-.7*(value-min)/(max-min||1));
+   const color=colors[available.indexOf(metric)%colors.length];
+   let segment=[];
+   const flush=()=>{
+    if(segment.length>1){
+     zoomSvg.append(svgNode(doc,'polyline',{points:segment.map(row=>zx(row.second).toFixed(2)+','+zy(row.values[metric.key]).toFixed(2)).join(' '),
+      fill:'none',stroke:color,'stroke-width':2,'data-second-metric':metric.key}));
+    }
+    segment=[];
+   };
+   for(const row of zoomSamples){
+    const value=row.values[metric.key];
+    if(value===null){flush();continue;}
+    if(segment.length&&row.second-segment.at(-1).second>1.5)flush();
+    segment.push(row);
+    zoomSvg.append(svgNode(doc,'circle',{cx:zx(row.second),cy:zy(value),r:2.1,fill:color,'data-second-metric':metric.key,'data-sample-second':row.second}));
+   }
+   flush();
+  }
+  if(zoomSamples.length)showSample(0);else sampleReadout.textContent='Sin registros para consultar.';
+  drawRaw();
+ }
+ zoomSvg.addEventListener('pointerdown',event=>{
+  if(!zoomSamples.length)return;
+  const bounds=zoomSvg.getBoundingClientRect();if(!bounds.width)return;
+  const px=(event.clientX-bounds.left)/bounds.width*760;
+  const target=Math.max(0,Math.min(60,(px-50)/695*60));
+  let index=0,best=Infinity;
+  for(let i=0;i<zoomSamples.length;i++){
+   const diff=Math.abs(zoomSamples[i].second-target);
+   if(diff<best){index=i;best=diff;}
+  }
+  showSample(index); // Explicitly reports the timestamp of the measured sample.
+ });
+
  const tableBox=create(doc,'details'),tableSummary=create(doc,'summary','Ver tabla minuto a minuto');
  const tableRoot=create(doc,'div');tableRoot.className='perf-scroll';
  tableBox.append(tableSummary,tableRoot);section.append(tableBox);
@@ -155,7 +272,7 @@ export function renderMeasuredMinuteOverlay(root,records,startTime=null){
   if(!chosen.length)parts.push('elige al menos una métrica para consultar sus valores.');
   readout.textContent=parts.join(' · ');
  }
- input.addEventListener('input',write);
+ input.addEventListener('input',()=>{write();drawZoom();});
  function table(){
   if(!tableBox.open)return;
   tableRoot.replaceChildren();
@@ -219,7 +336,7 @@ export function renderMeasuredMinuteOverlay(root,records,startTime=null){
    const txt=svgNode(doc,'text',{x:x(minute),y:244,'text-anchor':minute===0?'start':minute===maxMinute?'end':'middle','font-size':13,fill:'#345a49'});
    txt.textContent=minute+' min';svg.append(txt);
   }
-  write();table();
+  write();table();drawZoom();
  }
  svg.addEventListener('pointerdown',event=>{
   const bounds=svg.getBoundingClientRect();if(!bounds.width)return;

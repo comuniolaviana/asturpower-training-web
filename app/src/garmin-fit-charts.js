@@ -104,3 +104,34 @@ export function measuredMinutes(records,startTime=null,metrics=MINUTE_METRICS){
   return row;
  });
 }
+
+
+// Exact samples inside one selected elapsed minute (0..59.999 seconds).
+// No interpolation, time resampling, GPS, or filling absent sensors.
+// This is the drilldown beneath the existing minute averages.
+export function measuredMinuteSamples(records,startTime=null,minute=0,metrics=OVERLAY_METRICS){
+ if(!Array.isArray(records)||records.length>250000||!Number.isSafeInteger(minute)||minute<0||minute>2880||
+  !Array.isArray(metrics)||metrics.length>OVERLAY_METRICS.length)return [];
+ const allowed=new Map(OVERLAY_METRICS.map(m=>[m.key,m]));
+ if(metrics.some(m=>!m||!allowed.has(m.key)))return [];
+ const chosen=metrics.map(m=>allowed.get(m.key));
+ const parse=value=>value instanceof Date?value.getTime():typeof value==='string'?Date.parse(value):NaN;
+ let earliest=Infinity;
+ for(const record of records){
+  const time=parse(record?.timestamp);if(Number.isFinite(time)&&time<earliest)earliest=time;
+ }
+ if(!Number.isFinite(earliest))return [];
+ const requested=parse(startTime);
+ const first=Number.isFinite(requested)&&requested<=earliest?requested:earliest;
+ const start=first+minute*60000,end=start+60000,out=[];
+ for(const record of records){
+  const time=parse(record?.timestamp);if(!Number.isFinite(time)||time<start||time>=end)continue;
+  const values={};
+  for(const metric of chosen){
+   const v=record?.[metric.key];
+   values[metric.key]=typeof v==='number'&&Number.isFinite(v)&&(metric.min===undefined||v>=metric.min)?v:null;
+  }
+  out.push({timestamp:new Date(time).toISOString(),second:Number(((time-start)/1000).toFixed(3)),values});
+ }
+ return out.sort((a,b)=>a.second-b.second);
+}
