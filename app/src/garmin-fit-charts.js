@@ -33,6 +33,37 @@ export function chartPreview(records,maxBins=450){
 }
 
 
+// Selectable measurements must be explicitly supported sport-only fields.
+// Raw GPS, identifiers and private FIT messages never belong in coach overlays.
+// Cumulative distance uses the last measured sample of the minute, not an
+// arithmetic average of an odometer. Other fields are sampled averages.
+export const OVERLAY_METRICS=[
+ {key:'heartRate',label:'Pulso',unit:'lpm',min:0},
+ {key:'power',label:'Potencia',unit:'W',min:0},
+ {key:'cadence',label:'Cadencia',unit:'rpm',min:0},
+ {key:'speed',label:'Velocidad',unit:'m/s',min:0},
+ {key:'enhancedSpeed',label:'Velocidad mejorada',unit:'m/s',min:0},
+ {key:'distance',label:'Distancia acumulada',unit:'m',min:0,aggregation:'last'},
+ {key:'altitude',label:'Altitud',unit:'m'},
+ {key:'enhancedAltitude',label:'Altitud mejorada',unit:'m'},
+ {key:'grade',label:'Pendiente',unit:'%'},
+ {key:'temperature',label:'Temperatura',unit:'°C'},
+ {key:'respirationRate',label:'Frecuencia respiratoria',unit:'rpm',min:0},
+ {key:'verticalSpeed',label:'Velocidad vertical',unit:'m/s'},
+ {key:'verticalOscillation',label:'Oscilación vertical',unit:'mm',min:0},
+ {key:'stanceTime',label:'Tiempo de contacto',unit:'ms',min:0},
+ {key:'stanceTimePercent',label:'Contacto del paso',unit:'%',min:0},
+ {key:'verticalRatio',label:'Ratio vertical',unit:'%',min:0},
+ {key:'stepLength',label:'Longitud de zancada',unit:'mm',min:0},
+ {key:'leftRightBalance',label:'Balance izquierda/derecha',unit:'%',min:0},
+ {key:'leftTorqueEffectiveness',label:'Efectividad par izquierdo',unit:'%',min:0},
+ {key:'rightTorqueEffectiveness',label:'Efectividad par derecho',unit:'%',min:0},
+ {key:'leftPedalSmoothness',label:'Suavidad pedaleo izquierdo',unit:'%',min:0},
+ {key:'rightPedalSmoothness',label:'Suavidad pedaleo derecho',unit:'%',min:0},
+ {key:'combinedPedalSmoothness',label:'Suavidad pedaleo',unit:'%',min:0},
+ {key:'fractionalCadence',label:'Cadencia fraccional',unit:'rpm',min:0},
+ {key:'calories',label:'Calorías acumuladas',unit:'kcal',min:0,aggregation:'last'},
+];
 // Per-minute view is computed only from actual measured, timestamped records.
 // It never creates a value for a missing minute or assumes 1 Hz recording.
 export const MINUTE_METRICS=[
@@ -40,7 +71,8 @@ export const MINUTE_METRICS=[
   {key:'power',label:'Potencia',unit:'W'},
   {key:'cadence',label:'Cadencia',unit:'rpm'},
 ];
-export function measuredMinutes(records,startTime=null){
+export function measuredMinutes(records,startTime=null,metrics=MINUTE_METRICS){
+ if(!Array.isArray(metrics)||metrics.length>OVERLAY_METRICS.length||metrics.some(metric=>!OVERLAY_METRICS.some(m=>m.key===metric.key)))return [];
  if(!Array.isArray(records)||records.length>250000)return [];
  const parse=value=>value instanceof Date?value.getTime():typeof value==='string'?Date.parse(value):NaN;
  const dated=records.map(r=>({record:r,time:parse(r?.timestamp)}))
@@ -53,16 +85,21 @@ export function measuredMinutes(records,startTime=null){
   if(minute<0||minute>2880)continue;
   if(!bins.has(minute))bins.set(minute,{minute,records:0,values:{}});
   const bin=bins.get(minute);bin.records++;
-  for(const {key} of MINUTE_METRICS){
-   const v=record[key];if(typeof v!=='number'||!Number.isFinite(v)||v<0)continue;
-   const field=bin.values[key]??{sum:0,count:0};
-   field.sum+=v;field.count++;bin.values[key]=field;
+  for(const metric of metrics){
+   const {key}=metric,v=record[key];
+   if(typeof v!=='number'||!Number.isFinite(v)||(typeof metric.min==='number'&&v<metric.min))continue;
+   const field=bin.values[key]??{sum:0,count:0,last:null,lastAt:-Infinity};
+   field.sum+=v;field.count++;
+   if(time>=field.lastAt){field.last=v;field.lastAt=time;}
+   bin.values[key]=field;
   }
  }
  return [...bins.values()].sort((a,b)=>a.minute-b.minute).map(bin=>{
   const row={minute:bin.minute,records:bin.records,counts:{}};
-  for(const {key} of MINUTE_METRICS){
-   const value=bin.values[key];row[key]=value?value.sum/value.count:null;row.counts[key]=value?.count||0;
+  for(const metric of metrics){
+   const {key}=metric,value=bin.values[key];
+   row[key]=value?(metric.aggregation==='last'?value.last:value.sum/value.count):null;
+   row.counts[key]=value?.count||0;
   }
   return row;
  });
