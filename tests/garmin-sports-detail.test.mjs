@@ -52,3 +52,12 @@ test('TCX sport mismatch requires a unique exact session fingerprint and remains
  const series=buildSportSeries(decoded),dom=new JSDOM('<main></main>'),root=dom.window.document.querySelector('main');renderSportSeries(root,series);
  assert.match(root.textContent,/deporte indicado en el TCX difiere/);assert.equal(series.sessions[0].sport,'running');dom.window.close();
 });
+test('separate short recordings prefer a unique exact start, while exact duplicates remain unresolved',()=>{
+ const fit={sport:'cycling',started_at:'2021-04-01T10:00:00Z',timer_seconds:10,distance_meters:50};
+ const one={id:'one',sport:'cycling',started_at:fit.started_at,duration_seconds:10,distance_meters:50};
+ const two={...one,id:'two',started_at:'2021-04-01T10:00:32Z',duration_seconds:11,distance_meters:47};
+ assert.equal(matchFitActivity(fit,[one,two]).activity.id,'one');
+ assert.equal(matchFitActivity({...fit,started_at:two.started_at,timer_seconds:11,distance_meters:47},[one,two]).activity.id,'two');
+ assert.equal(matchFitActivity(fit,[one,{...one,id:'duplicate'}]),null);
+ assert.equal(matchFitActivity(fit,[{...one,duration_seconds:100}]),null);
+});

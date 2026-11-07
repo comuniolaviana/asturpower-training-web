@@ -88,13 +88,16 @@ export function matchFitActivity(fit,activities){
   const ms=Date.parse(a.started_at),diff=Math.abs(ms-fitMs);
   if(!Number.isFinite(ms)||diff>180000)return false;
   const timer=Number(a.duration_seconds);
-  if(!Number.isFinite(timer)||Math.abs(timer-fit.timer_seconds)>Math.max(120,0.25*timer))return false;
+  if(!Number.isFinite(timer)||Math.abs(timer-fit.timer_seconds)>Math.max(5,0.25*timer))return false;
   if(fit.distance_meters!==null&&a.distance_meters!==null){
    const meters=Number(a.distance_meters);
    if(!Number.isFinite(meters)||Math.abs(meters-fit.distance_meters)>Math.max(500,0.15*Math.max(meters,fit.distance_meters)))return false;
   }
   return true;
  });
+ const exact=candidates.filter(a=>Math.abs(Date.parse(a.started_at)-fitMs)<=1000);
+ if(exact.length===1)return {activity:exact[0],offset_seconds:Math.round(Math.abs(Date.parse(exact[0].started_at)-fitMs)/1000)};
+ if(exact.length>1)return null;
  if(candidates.length!==1){
   // Some historic TCX exports retain an obsolete Sport attribute. Only an
   // exact, unique session fingerprint can override that label for linking.
