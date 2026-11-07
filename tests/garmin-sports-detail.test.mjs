@@ -26,7 +26,7 @@ test('dated thresholds change by actual effective dates and a cleared later FTP 
 test('TCX restores a running session with measured pulse/cadence and no invented power',()=>{
  const dom=new JSDOM(''),Parser=dom.window.DOMParser;
  const xml='<TrainingCenterDatabase><Activities><Activity Sport="Running"><Id>2022-04-01T10:00:00Z</Id><Lap StartTime="2022-04-01T10:00:00Z"><TotalTimeSeconds>60</TotalTimeSeconds><DistanceMeters>200</DistanceMeters><Track><Trackpoint><Time>2022-04-01T10:00:00Z</Time><HeartRateBpm><Value>135</Value></HeartRateBpm><Cadence>80</Cadence></Trackpoint><Trackpoint><Time>2022-04-01T10:01:00Z</Time><HeartRateBpm><Value>140</Value></HeartRateBpm></Trackpoint></Track></Lap></Activity></Activities></TrainingCenterDatabase>';
- const decoded=decodeSportXml(new TextEncoder().encode(xml),'TCX',Parser),fit=analyzeFitDecoded(decoded);assert.equal(fit.sport,'running');assert.equal(fit.sample_count,2);assert.equal(fit.normalized_power_watts,null);assert.equal(fit.distance_meters,200);
+ const decoded=decodeSportXml(new TextEncoder().encode(xml),'TCX',Parser),fit=analyzeFitDecoded(decoded);assert.equal(fit.sport,'running');assert.equal(fit.sample_count,2);assert.equal(fit.normalized_power_watts,null);assert.equal(fit.distance_meters,200);assert.equal(decoded.messages.lapMesgs[0].avgCadence,undefined,'An instantaneous cadence is not a lap average');
  assert.throws(()=>decodeSportXml(new TextEncoder().encode('<!DOCTYPE data><x/>'),'TCX',Parser));dom.window.close();
 });
 test('TCX with lap measurements but no Trackpoints retains actual laps and never draws an instantaneous curve',()=>{

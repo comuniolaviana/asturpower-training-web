@@ -32,7 +32,7 @@ async function allRows(queryFactory){
 export async function readAnalysisSummary(client,ownerId,archiveId,{includeDetails=false}={}){
  await assertOwner(client,ownerId);
  const [analysis,progress,physiology]=await Promise.all([
-  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,normalized_power_watts,tss,fit_started_at,power_coverage,power_seconds,duration_seconds,source_file_key,np_method,device_intensity_factor,device_tss,device_ftp_watts,calculation_version').eq('athlete_id',ownerId).eq('archive_id',archiveId).order('fit_started_at',{ascending:false})),
+  allRows(()=>client.from('garmin_fit_analysis').select('activity_id,sport,normalized_power_watts,tss,fit_started_at,power_coverage,power_seconds,sample_count,duration_seconds,source_file_key,np_method,device_intensity_factor,device_tss,device_ftp_watts,calculation_version').eq('athlete_id',ownerId).eq('archive_id',archiveId).order('fit_started_at',{ascending:false})),
   client.from('garmin_fit_scan_progress').select('pack_name,next_index,scanned,linked,processing_version').eq('athlete_id',ownerId).eq('archive_id',archiveId).limit(24),
   client.from('athlete_physiology').select('sport,effective_date,ftp,created_at').eq('athlete_id',ownerId).eq('sport','cycling').order('effective_date',{ascending:false}).limit(500),
  ]);

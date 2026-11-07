@@ -2,6 +2,8 @@
 const elements=(node,name)=>[...node.getElementsByTagName('*')].filter(e=>e.localName===name);
 const text=(node,name)=>elements(node,name)[0]?.textContent?.trim();
 const number=(node,name)=>{const raw=text(node,name);return raw!==undefined&&raw!==''&&Number.isFinite(Number(raw))?Number(raw):null;};
+const own=(node,name)=>[...node.children].find(e=>e.localName===name);
+const ownNumber=(node,name)=>{const raw=own(node,name)?.textContent?.trim();return raw!==undefined&&raw!==''&&Number.isFinite(Number(raw))?Number(raw):null;};
 export function decodeSportXml(bytes,kind,Parser=globalThis.DOMParser){
  if(typeof Parser!=='function'||bytes.length>8*1024*1024)throw new Error('XML deportivo fuera del límite de lectura.');
  const source=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
@@ -19,9 +21,9 @@ export function decodeSportXml(bytes,kind,Parser=globalThis.DOMParser){
    const hr=elements(p,'HeartRateBpm')[0];if(hr){const value=number(hr,'Value');if(value!==null)r.heartRate=value;}return r;
   });
   laps=elements(a,'Lap').map(l=>{
-   const lap={startTime:new Date(l.getAttribute('StartTime')),totalTimerTime:number(l,'TotalTimeSeconds'),totalDistance:number(l,'DistanceMeters')};
-   for(const [key,name] of [['maxSpeed','MaximumSpeed'],['totalCalories','Calories'],['avgCadence','Cadence']]){const v=number(l,name);if(v!==null)lap[key]=v;}
-   for(const [key,name] of [['avgHeartRate','AverageHeartRateBpm'],['maxHeartRate','MaximumHeartRateBpm']]){const block=elements(l,name)[0],v=block?number(block,'Value'):null;if(v!==null)lap[key]=v;}
+   const lap={startTime:new Date(l.getAttribute('StartTime')),totalTimerTime:ownNumber(l,'TotalTimeSeconds'),totalDistance:ownNumber(l,'DistanceMeters')};
+   for(const [key,name] of [['maxSpeed','MaximumSpeed'],['totalCalories','Calories'],['avgCadence','Cadence']]){const v=ownNumber(l,name);if(v!==null)lap[key]=v;}
+   for(const [key,name] of [['avgHeartRate','AverageHeartRateBpm'],['maxHeartRate','MaximumHeartRateBpm']]){const block=own(l,name),v=block?ownNumber(block,'Value'):null;if(v!==null)lap[key]=v;}
    return lap;
   });
   session.startTime=new Date(text(a,'Id')||points[0]?.timestamp);
