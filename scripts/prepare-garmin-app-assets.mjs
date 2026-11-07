@@ -9,7 +9,7 @@ await cp(new URL('../dist-app/assets/',import.meta.url),new URL('assets/',target
 for(const name of ['privacidad-garmin.html','garmin-privacy.css']){
   await cp(new URL('../dist-app/'+name,import.meta.url),new URL(name,target));
 }
-for(const name of ['manifest.webmanifest','offline.html','offline.css','icons']){
+for(const name of ['manifest.webmanifest','offline.html','offline.css','icons','push-sw.js']){
   await cp(new URL('../dist-app/'+name,import.meta.url),new URL(name,target),{recursive:true});
 }
 const files=['/offline.html','/offline.css','/manifest.webmanifest'];

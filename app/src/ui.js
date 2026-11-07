@@ -1,3 +1,6 @@
+import {mountBasics,mountWeight,mountZones,mountNews} from './athlete-hub-ui.js';
+import {unreadNews} from './athlete-hub-data.js';
+import {bindPush} from './push-client.js';
 import { requestTeam } from './team-api.js';
 import { mountPlanner } from './planning.js';
 import { mountPerformance } from './performance-ui.js';
@@ -16,6 +19,10 @@ const glyphs = {
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
   lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0M12 14v3"/>',
   refresh: '<path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/>',
+  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',
+  bolt: '<path d="m13 2-9 12h7l-1 8 10-13h-8z"/>',
+  weight: '<path d="M5 3h14l3 18H2zM9 6h6l-1 4h-4z"/>',
   logout: '<path d="M10 4H4v16h6M9 12h12m-5-5 5 5-5 5"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${glyphs[name] || glyphs.home}</svg>`;
@@ -28,13 +35,17 @@ export function showUnavailable(root) {
 }
 
 export function mountApp(root, client, { fixture = false, teamRequest = requestTeam } = {}) {
-  const oauthResult=new URL(root.ownerDocument.location.href).searchParams.get('garmin');
-  let user = null, data = null, view = ['connected','failed','expired','cancelled','not_ready'].includes(oauthResult)?'garmin':'overview', epoch = 0, disposed = false, query = '';
+  const params=new URL(root.ownerDocument.location.href).searchParams;
+  const oauthResult=params.get('garmin');
+  let user = null, data = null, view = ['connected','failed','expired','cancelled','not_ready'].includes(oauthResult)?'garmin':params.get('view')==='news'?'news':'overview', epoch = 0, disposed = false, query = '';
   let actionBusy = false, logoutBusy = false, ignoreSession = false, teamBusy = false, teamPage = 0, preferredRole = null;
-  let emailNotice = '', emailNoticeUser = null;
+  let emailNotice = '', emailNoticeUser = null, hubDispose=null, calendarDate=null;
+  const cleanupHub=()=>{hubDispose?.();hubDispose=null;};
+  const navigateHub=(next,date)=>{calendarDate=date||null;view=next;render();};
   const banner = fixture ? '<div class="fixture-banner">VISTA DE PRUEBA · DATOS FICTICIOS</div>' : '';
 
   function login(message = '', retryLogout = false) {
+    cleanupHub();void bindPush(root.ownerDocument.defaultView,null).catch(()=>{});
     root.innerHTML = `${banner}<main class="login-layout"><section class="login-story">${brand}<div class="story-copy"><span class="eyebrow">TU ESPACIO DE ENTRENAMIENTO</span><h1>Cada persona.<br>Cada paso.<br><em>Un propósito.</em></h1><p>Un lugar para conectar a entrenadores y deportistas. Empieza por tu equipo.</p><div class="story-route" aria-hidden="true"><svg viewBox="0 0 500 150"><path d="M0 130C100 130 80 50 180 75S300 150 350 50 430 80 500 15"/><circle cx="350" cy="50" r="8"/></svg></div></div><p class="story-footer">ASTURIAS · ENTRENAR CON PROPÓSITO</p></section><section class="login-access"><span class="environment"><span></span> Entorno de pruebas</span><div class="login-form-wrap"><span class="section-number">01 / ACCESO</span><h2>Vuelve a tu equipo.</h2><p class="intro">Entra con tu cuenta de AsturPower Training.</p><form id="login-form"><label for="email">Correo electrónico</label><input id="email" name="email" type="email" autocomplete="username" placeholder="tu@correo.com" required maxlength="254"><label for="password">Contraseña</label><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Tu contraseña" required><p class="form-message" id="login-message" role="alert">${esc(message)}</p><button class="button primary wide" type="submit">Entrar en mi espacio ${icon('arrow')}</button></form><div class="access-help">${icon('lock')}<p>El acceso se habilita de forma supervisada.<br>¿Necesitas ayuda? <a href="${contact}">Escríbenos</a></p></div></div><footer class="login-footer">Tu preparación empieza por una buena conexión.</footer></section></main>`;
     if (retryLogout) {
       const retry = root.ownerDocument.createElement('button');
@@ -46,6 +57,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   }
 
   function loading() {
+    cleanupHub();
     root.innerHTML = `${banner}<main class="loading-screen">${brand}<div class="loading-dot"></div><p role="status">Preparando tu espacio…</p></main>`;
   }
 
@@ -70,33 +82,44 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   }
 
   function overview() {
-    const active = data.relationships.filter(r => r.status === 'active').length;
-    const pending = data.relationships.filter(r => r.status === 'pending').length;
-    return `<section class="welcome-card"><div><span class="eyebrow">UN EQUIPO, UN MISMO RUMBO</span><h2>${data.role === 'coach' ? 'Conoce a tu equipo.<br>Acompaña cada paso.' : 'Tu preparación,<br>en buena compañía.'}</h2><p>${data.role === 'coach' ? 'Aquí encontrarás a las personas que entrenan contigo y el estado de sus vinculaciones.' : 'Este es tu espacio para mantener tu perfil y consultar el estado de tus vinculaciones.'}</p></div><span class="welcome-mark" aria-hidden="true">ϟ</span></section><div class="summary-grid"><article class="summary-card"><span>${icon('people')} Vinculaciones activas</span><strong>${active.toString().padStart(2, '0')}</strong><small>${data.role === 'coach' ? 'Deportistas vinculados a ti' : 'Entrenadores vinculados a ti'}</small></article><article class="summary-card"><span>${icon('lock')} Pendientes de activar</span><strong>${pending.toString().padStart(2, '0')}</strong><small>El equipo revisará cada vinculación</small></article><article class="summary-card connection-card"><span>GARMIN CONNECT</span><strong>Conexión personal</strong><small>Consulta el estado y los permisos en el apartado Garmin</small></article></div>${data.role === 'coach' ? teamContent() : `<section class="panel"><div class="panel-heading"><h2>Mis vinculaciones</h2><span class="count-pill">${data.relationships.length}</span></div>${data.relationships.length ? `<ul class="relationship-list">${data.relationships.map(r => `<li><span>${icon('people')} Vinculación con entrenador</span><span class="status ${esc(r.status)}">${esc(STATUS_LABELS[r.status] || 'Sin confirmar')}</span></li>`).join('')}</ul><p class="subtle">Los detalles del entrenador se habilitarán en una siguiente fase.</p>` : empty('Aún no tienes vinculaciones.', 'Cuando se active tu relación con un entrenador, aparecerá en este espacio.')}</section>`}`;
+    const active=data.relationships.filter(r=>r.status==='active').length;
+    const cards=data.role==='coach' ? [['calendar','Calendario','calendar','Sesiones y actividades'],['team','Mis deportistas','people',`${active} vinculaciones activas`],['performance','Rendimiento','activity','Carga, fatiga y forma'],['profile','Mi perfil','user','Mi cuenta y mis datos']] : [['calendar','Calendario','calendar','Actividades y entrenamientos'],['team','Mis vínculos','people',active?`${active} entrenador${active===1?'':'es'} · Garmin`:'Entrenador y Garmin'],['profile','Mi perfil','user','Mi ficha deportiva'],['weight','Mi peso','weight','Evolución y registros']];
+    return `<div class="hub-home"><section class="hub-shortcuts" aria-label="Accesos rápidos">${cards.map(([id,title,symbol,note])=>`<button class="hub-shortcut" data-view="${id}"><span class="shortcut-icon">${icon(symbol)}</span><strong>${title}</strong><small>${note}</small><span class="shortcut-arrow" aria-hidden="true">↗</span></button>`).join('')}</section><section class="hub-news"><div class="hub-section-heading"><h2>Novedades</h2><button class="hub-link" data-view="news">Ver todas →</button></div><div id="hub-news-home"></div></section></div>${data.role==='coach'?teamContent():''}`;
   }
 
   function render() {
     if (!user || !data) return;
+    cleanupHub();
+    void bindPush(root.ownerDocument.defaultView,user.id).catch(()=>{});
     const roleLabel = ROLE_LABELS[data.role] || 'Acceso pendiente';
     const name = data.profile?.display_name || 'Tu espacio';
-    const currentTitle = view === 'profile' ? 'Mi perfil' : view === 'team' ? (data.role==='athlete'?'Mis entrenadores':'Mis deportistas') : view === 'calendar' ? 'Calendario' : view === 'performance' ? 'Rendimiento' : view === 'garmin' ? 'Garmin Connect' : 'Vista general';
+    const currentTitle=({profile:'Mi perfil',team:data.role==='athlete'?'Mis vínculos':'Mis deportistas',calendar:'Calendario',performance:'Rendimiento',garmin:'Garmin Connect',weight:'Mi peso','zones-hr':'Mis zonas de pulso','zones-power':'Mis zonas de potencia',news:'Novedades'})[view]||'Inicio';
     const managed = renderTeamManagement(data);
     const roleSwitcher = data.roles.length > 1 ? `<label class="workspace-switcher" for="workspace-role">Tu espacio<select id="workspace-role">${data.roles.map(role => `<option value="${role}" ${data.role === role ? 'selected' : ''}>${ROLE_LABELS[role]}</option>`).join('')}</select></label>` : '';
     const content = !data.profile ? profileForm(true) : view === 'profile' ? profileForm() : !data.role
       ? `<section class="panel pending-panel">${icon('lock')}<span class="eyebrow">PERFIL PREPARADO</span><h2>El siguiente paso es con tu equipo.</h2><p>Tu cuenta está pendiente de asignación de acceso. Contacta con AsturPower para habilitar tu espacio de entrenador o deportista.</p><a class="button primary" href="${contact}">Contactar con el equipo ${icon('arrow')}</a></section>`
       : data.role === 'admin' ? managed || `<section class="panel pending-panel">${icon('people')}<h2>Tu acceso de administración está identificado.</h2><p>La gestión de altas y vinculaciones está pendiente de habilitación. Tu perfil ya está disponible.</p><button class="button primary" data-view="profile">Revisar mi perfil ${icon('arrow')}</button></section>`
+      : view === 'weight' && data.role==='athlete' ? '<div id="hub-weight"></div>'
+      : ['zones-hr','zones-power'].includes(view) && data.role==='athlete' ? '<div id="hub-zones"></div>'
+      : view === 'news' ? '<div id="hub-news-all"></div>'
       : view === 'performance' && data.role === 'coach' ? '<div id="performance-panel"></div>'
       : view === 'calendar' ? '<section class="panel planner-panel"><div id="planning-calendar"></div></section>'
       : view === 'garmin' ? '<section class="panel"><div id="garmin-connect-panel"></div></section>'
-      : view === 'team' ? (data.role==='coach'?teamContent():managed||'<section class="panel"><h2>Mis entrenadores</h2><p>No se han podido consultar tus vinculaciones. Pulsa Actualizar para volver a intentarlo.</p></section>') : overview();
-    root.innerHTML = `${banner}<div class="app-shell"><aside class="sidebar">${brand}${roleSwitcher}<div class="workspace-label">MI ESPACIO</div><nav aria-label="Navegación principal">${navItem('overview', 'Vista general', 'home')}${data.role === 'coach' ? navItem('team', 'Mis deportistas', 'people') : ''}${data.role === 'coach' ? navItem('performance', 'Rendimiento', 'activity') : ''}${['coach', 'athlete'].includes(data.role) ? navItem('calendar', 'Calendario', 'calendar') : ''}${['coach','athlete'].includes(data.role) ? navItem('garmin', 'Garmin', 'activity') : ''}${navItem('profile', 'Mi perfil', 'user')}</nav><div class="sidebar-bottom"><div class="sidebar-note"><span class="mini-dot"></span> Entorno de pruebas<p>Paso a paso, hacia<br>tu mejor versión.</p></div><button class="logout" data-logout>${icon('logout')} Cerrar sesión</button></div></aside><div class="workspace"><header class="topbar"><span>Mi espacio <i>/</i> <strong>${currentTitle}</strong></span><span class="identity"><span class="identity-text">${esc(name)}<small>${roleLabel}</small></span><span class="avatar small">${esc(initials(name))}</span></span></header><main id="main-content"><div class="page-heading"><div><span class="eyebrow">ASTURPOWER TRAINING</span><h1>${view === 'overview' ? `Hola, ${esc(name)}<span class="lime-period">.</span>` : currentTitle}</h1><p>${view === 'profile' ? 'Lo esencial para que tu equipo te conozca.' : 'Todo empieza por las personas que te acompañan.'}</p></div><button class="button secondary" data-refresh>${icon('refresh')} Actualizar</button></div><p id="notice" class="notice" role="status" aria-live="polite"></p>${content}${data.role !== 'admin' && view === 'overview' ? managed : ''}<footer class="workspace-footer"><span>Entrenar con propósito.</span><span>AsturPower Training</span></footer></main></div></div><dialog id="athlete-detail"><button class="dialog-close" data-close-dialog aria-label="Cerrar ficha">×</button><div id="athlete-detail-content"></div></dialog><dialog id="team-confirm"><button class="dialog-close" data-close-team aria-label="Cerrar confirmación">×</button><div id="team-confirm-content"></div></dialog>`;
+      : view === 'team' ? (data.role==='coach'?teamContent():`<div class="hub-connections">${managed||'<section class="panel"><h2>Mi entrenador</h2><p>No se pudieron consultar las vinculaciones. Pulsa Actualizar.</p></section>'}<section class="panel"><div id="garmin-connect-panel"></div></section></div>`) : overview();
+    root.innerHTML = `${banner}<div class="app-shell hub-shell hub-view-${esc(view)}"><aside class="sidebar">${brand}${roleSwitcher}<div class="workspace-label">MI ESPACIO</div><nav aria-label="Navegación principal">${navItem('overview', 'Inicio', 'home')}${data.role === 'coach' ? navItem('team', 'Mis deportistas', 'people') : ''}${data.role === 'coach' ? navItem('performance', 'Rendimiento', 'activity') : ''}${['coach', 'athlete'].includes(data.role) ? navItem('calendar', 'Calendario', 'calendar') : ''}${data.role==='athlete'?navItem('team','Mis vínculos','people'):data.role==='coach'?navItem('garmin','Garmin','activity'):''}${data.role==='athlete'?navItem('weight','Mi peso','weight'):''}${navItem('profile', 'Mi perfil', 'user')}</nav><div class="sidebar-bottom"><div class="sidebar-note"><span class="mini-dot"></span> Entorno de pruebas<p>Paso a paso, hacia<br>tu mejor versión.</p></div><button class="logout" data-logout>${icon('logout')} Cerrar sesión</button></div></aside><div class="workspace"><header class="topbar"><div class="hub-mobile-brand">${brand}${data.roles.length>1?`<select class="hub-role-select" aria-label="Cambiar espacio" data-mobile-role>${data.roles.map(role=>`<option value="${role}" ${role===data.role?'selected':''}>${ROLE_LABELS[role]}</option>`).join('')}</select>`:''}</div><span class="hub-breadcrumb">Mi espacio <i>/</i> <strong>${currentTitle}</strong></span><div class="hub-header-actions">${data.role==='athlete'?`<button type="button" class="hub-icon-button" data-view="zones-hr" aria-label="Mis zonas de frecuencia cardíaca">${icon('heart')}</button><button type="button" class="hub-icon-button" data-view="zones-power" aria-label="Mis zonas de potencia">${icon('bolt')}</button>`:''}<button type="button" class="hub-icon-button" data-view="news" aria-label="Notificaciones y novedades">${icon('bell')}<span class="notification-count" data-news-count hidden></span></button><button type="button" class="hub-icon-button hub-mobile-logout" data-logout aria-label="Cerrar sesión">${icon('logout')}</button></div><span class="identity"><span class="identity-text">${esc(name)}<small>${roleLabel}</small></span><span class="avatar small">${esc(initials(name))}</span></span></header><main id="main-content"><div class="page-heading"><div><span class="eyebrow">ASTURPOWER TRAINING</span><h1>${view === 'overview' ? `Hola, ${esc(name)}<span class="lime-period">.</span>` : currentTitle}</h1><p>${view==='overview'?'Tu día, de un vistazo.':view==='calendar'?'Tu actividad, día a día.':view==='team'?'Conexiones y permisos.':''}</p></div><button class="button secondary" data-refresh>${icon('refresh')} Actualizar</button></div><p id="notice" class="notice" role="status" aria-live="polite"></p>${content}<footer class="workspace-footer"><span>Entrenar con propósito.</span><span>AsturPower Training</span></footer></main></div><nav class="hub-bottom-nav" aria-label="Accesos del móvil">${navItem('overview','Inicio','home')}${['coach','athlete'].includes(data.role)?navItem('calendar','Calendario','calendar')+navItem('team',data.role==='coach'?'Equipo':'Vínculos','people'):''}${navItem('profile','Perfil','user')}</nav></div><dialog id="athlete-detail"><button class="dialog-close" data-close-dialog aria-label="Cerrar ficha">×</button><div id="athlete-detail-content"></div></dialog><dialog id="team-confirm"><button class="dialog-close" data-close-team aria-label="Cerrar confirmación">×</button><div id="team-confirm-content"></div></dialog>`;
     root.querySelector('#profile-form')?.addEventListener('submit', submitProfile);
     if (view === 'profile' && data.profile) {
-      const emailRoot = root.ownerDocument.createElement('section');
+      if(data.role==='athlete'){const basicRoot=root.ownerDocument.createElement('div');root.querySelector('#profile-form').closest('section').after(basicRoot);void mountBasics({root:basicRoot,client,user});}
+      const emailRoot = root.ownerDocument.createElement('details');emailRoot.className='hub-disclosure hub-account-email';emailRoot.innerHTML='<summary>Correo y acceso a mi cuenta</summary>';const emailContent=root.ownerDocument.createElement('div');emailRoot.append(emailContent);
       root.querySelector('#profile-form').closest('section').after(emailRoot);
       const accountUser = user;
-      mountAccountEmail({root:emailRoot,client,user:accountUser,notice:emailNoticeUser===user.id?emailNotice:'',onRequested:message=>{emailNotice=message;emailNoticeUser=accountUser.id;}});
+      mountAccountEmail({root:emailContent,client,user:accountUser,notice:emailNoticeUser===user.id?emailNotice:'',onRequested:message=>{emailNotice=message;emailNoticeUser=accountUser.id;}});
     }
+    if(root.querySelector('#hub-weight'))void mountWeight({root:root.querySelector('#hub-weight'),client,user});
+    if(root.querySelector('#hub-zones'))void mountZones({root:root.querySelector('#hub-zones'),client,user,kind:view==='zones-power'?'power':'hr'});
+    const newsRoot=root.querySelector('#hub-news-home,#hub-news-all');
+    if(!newsRoot&&['athlete','coach'].includes(data.role))void updateNewsBadge();
+    if(newsRoot)hubDispose=mountNews({root:newsRoot,client,user,all:view==='news',onNavigate:navigateHub,onCount:count=>{const badge=root.querySelector('[data-news-count]');if(badge){badge.hidden=!count;badge.textContent=count>99?'99+':String(count);}}});
     const performanceRoot = root.querySelector('#performance-panel');
     if (performanceRoot && data.role === 'coach') {
       void mountPerformance({root:performanceRoot,client,user,role:data.role,athletes:data.athletes});
@@ -107,7 +130,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
     }
     const calendarRoot = root.querySelector('#planning-calendar');
     if (calendarRoot && ['coach', 'athlete'].includes(data.role)) {
-      void mountPlanner({ root: calendarRoot, client, user, role: data.role });
+      void mountPlanner({ root: calendarRoot, client, user, role: data.role, initialDate:calendarDate });
     }
     root.querySelector('#athlete-search')?.addEventListener('input', event => {
       query = event.target.value;
@@ -236,11 +259,14 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   }
 
   function onWorkspaceChange(event) {
-    if (event.target.id !== 'workspace-role' || !data?.roles.includes(event.target.value)) return;
+    if ((event.target.id !== 'workspace-role' && !event.target.hasAttribute('data-mobile-role')) || !data?.roles.includes(event.target.value)) return;
     preferredRole = event.target.value; teamPage = 0; view = 'overview'; query = '';
     void sync();
   }
 
+  async function updateNewsBadge(){const uid=user?.id;if(!uid)return;try{const count=await unreadNews(client,uid);if(user?.id!==uid||disposed)return;const badge=root.querySelector('[data-news-count]');if(badge){badge.hidden=!count;badge.textContent=count>99?'99+':String(count);}}catch{}}
+  const onPushMessage=e=>{if(e.data?.type==='ASTURPOWER_NEWS')void updateNewsBadge();if(e.data?.type==='ASTURPOWER_OPEN_NEWS'&&user&&!root.querySelector('[data-garmin-import-running="true"]'))navigateHub('news');};
+  root.ownerDocument.defaultView.navigator.serviceWorker?.addEventListener('message',onPushMessage);
   root.addEventListener('click', onClick);
   root.addEventListener('submit', onTeamSubmit);
   root.addEventListener('change', onWorkspaceChange);
@@ -266,7 +292,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   loading();
   // Makes startup independent of whether the SDK already emitted INITIAL_SESSION.
   void sync();
-  return () => { disposed = true; ++epoch; authListener.subscription.unsubscribe(); root.removeEventListener('click', onClick); root.removeEventListener('submit', onTeamSubmit); root.removeEventListener('change', onWorkspaceChange); root.ownerDocument.removeEventListener('visibilitychange', onVisibility); root.replaceChildren(); };
+  return () => { cleanupHub();root.ownerDocument.defaultView.navigator.serviceWorker?.removeEventListener('message',onPushMessage);disposed = true; ++epoch; authListener.subscription.unsubscribe(); root.removeEventListener('click', onClick); root.removeEventListener('submit', onTeamSubmit); root.removeEventListener('change', onWorkspaceChange); root.ownerDocument.removeEventListener('visibilitychange', onVisibility); root.replaceChildren(); };
 }
 
 function initials(name) {

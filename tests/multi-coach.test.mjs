@@ -49,9 +49,10 @@ test('switching workspaces clears previous roster and exposes only granted views
   select.value = 'athlete'; select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await flush();
   assert.equal(root.querySelector('#workspace-role').value, 'athlete');
-  assert.equal(root.querySelector('[data-view=team]'), null);
+  assert.ok(root.querySelector('.hub-shortcut[data-view=team]'));
+  assert.equal(root.querySelector('.hub-shortcut[data-view=team] strong').textContent,'Mis vínculos');
   assert.equal(root.querySelectorAll('.athlete-card').length, 0);
-  assert.ok(root.textContent.includes('Mis vinculaciones'));
+  assert.ok(root.textContent.includes('Mis vínculos'));
   assert.ok(!root.textContent.includes('Deportista ajeno ficticio'));
   dispose();
 });

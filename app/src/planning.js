@@ -99,11 +99,11 @@ export async function deletePlannedWorkout(client,coachId,workoutId){
   return removed[0];
 }
 
-export async function mountPlanner({root,client,user,role}) {
+export async function mountPlanner({root,client,user,role,initialDate}) {
   if(!root||!client?.from||!user?.id||!['coach','athlete'].includes(role))return;
-  let month=new Date();
+  let month=/^\d{4}-\d{2}-\d{2}$/.test(initialDate||'')?new Date(initialDate+'T12:00:00'):new Date();
   month=new Date(month.getFullYear(),month.getMonth(),1);
-  let day=isoDate(new Date());
+  let day=initialDate||isoDate(new Date());
   let workouts=[],activities=[],athletes=[],fitMetrics=new Map(),notice='',busy=false,editingId=null,deleteId=null,selectedAthlete='',detailDispose=()=>{},loadEpoch=0;
   const localDay=timestamp=>isoDate(new Date(timestamp));
   const range=()=>[isoDate(month),isoDate(new Date(month.getFullYear(),month.getMonth()+1,1))];

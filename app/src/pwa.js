@@ -24,6 +24,7 @@ export function mountInstallApp(win=window){
     finally{button.disabled=false;}
     return;
    }
+   section.dataset.instructions='true';
    note.textContent=/iPad|iPhone|iPod/.test(win.navigator.userAgent)?'En Safari: Compartir → Añadir a pantalla de inicio → Añadir.':'En Chrome: menú ⋮ → Añadir a pantalla de inicio → Instalar. Si aparece «Crear acceso directo», recarga esta página y vuelve a probar.';
    note.setAttribute('role','status');button.textContent='Ver opciones de instalación';
   });

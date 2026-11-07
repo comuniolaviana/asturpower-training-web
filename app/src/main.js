@@ -7,6 +7,7 @@ import './planning.css';
 import './performance.css';
 import {mountInstallApp} from './pwa.js';
 import './pwa.css';
+import './athlete-hub.css';
 
 mountInstallApp();
 

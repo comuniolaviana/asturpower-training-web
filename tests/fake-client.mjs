@@ -7,6 +7,7 @@ export function fakeClient({ role = 'coach', profile = true, signedIn = true, na
     signedIn, user, writes: [],
     tables: {
       profiles: [own, { user_id: IDs.a, display_name: 'Lucía Ejemplo' }, { user_id: IDs.b, display_name: 'Diego Prueba' }].filter(Boolean).filter((v, i, all) => all.findIndex(a => a.user_id === v.user_id) === i),
+      athlete_weights:[],athlete_basics:[],app_notifications:[],athlete_physiology:[],app_push_subscriptions:[],
       user_roles: roles.map(role => ({ user_id: user.id, role })),
       coach_athletes: [
         { coach_id: IDs.coach, athlete_id: IDs.a, status: 'active', created_at: '2026-11-01T12:00:00Z' },
@@ -30,14 +31,17 @@ export function fakeClient({ role = 'coach', profile = true, signedIn = true, na
       onAuthStateChange(fn) { listeners.add(fn); return { data: { subscription: { unsubscribe() { listeners.delete(fn); } } } }; },
     },
     from(table) {
-      const filters = []; let write = null, value = null, one = false;
+      const filters = []; let write = null, value = null, one = false, start=0,end=Infinity,head=false,count=false;
+      state.tables[table]??=[];
       const builder = {
-        select() { return builder; },
+        select(_,opts={}) {head=opts.head;count=opts.count==='exact';return builder; },
+        limit(n){end=n-1;return builder;},range(a,b){start=a;end=b;return builder;},is(k,v){filters.push(row=>(row[k]??null)===v);return builder;},
         eq(key, v) { filters.push(row => row[key] === v); return builder; },
         in(key, vs) { filters.push(row => vs.includes(row[key])); return builder; },
         order() { return builder; },
         maybeSingle() { one = true; return builder; },
         single() { one = true; return builder; },
+        upsert(v){write='upsert';value=v;return builder;},
         insert(v) { write = 'insert'; value = v; return builder; },
         update(v) { write = 'update'; value = v; return builder; },
         async then(resolve, reject) {
@@ -47,10 +51,10 @@ export function fakeClient({ role = 'coach', profile = true, signedIn = true, na
             let rows = state.tables[table].filter(row => filters.every(fn => fn(row)));
             if (write) {
               state.writes.push({ table, operation: write, value });
-              if (write === 'insert') { rows = [{ ...value, created_at: '2026-11-02T12:00:00Z' }]; state.tables[table].push(...rows); }
+              if (write === 'insert' || write==='upsert') { rows = [{ id:'synthetic-'+state.writes.length,...value, created_at: '2026-11-02T12:00:00Z' }]; state.tables[table].push(...rows); }
               else rows.forEach(row => Object.assign(row, value));
             }
-            resolve({ data: one ? rows[0] || null : rows.map(row => ({ ...row })), error: null });
+            resolve({ data: head?null:one ? rows[0] || null : rows.slice(start,end+1).map(row => ({ ...row })),count:count?rows.length:undefined, error: null });
           } catch (e) { reject(e); }
         },
       };
