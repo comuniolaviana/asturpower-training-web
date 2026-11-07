@@ -37,7 +37,10 @@ export function mountActivityDetail({root,client,userId,activityId}){
   if(m?.device_tss!==null&&m?.device_tss!==undefined&&m.tss_source==='historical_ftp')root.append(el('p','Valores originales de Garmin: IF '+fmt(m.device_intensity_factor,'',3)+' · TSS '+fmt(m.device_tss)+'. El panel principal muestra el recálculo con el FTP histórico confirmado.','ap-muted'));
   if(m&&m.tss===null)root.append(el('p',m.normalized_power_watts===null&&m.device_intensity_factor==null?'TSS pendiente: el original no aporta datos de intensidad suficientes para calcularlo.':'TSS pendiente: se necesita un FTP verificable vigente en la fecha de esta actividad.','ap-muted'));
   if(series){const curves=el('section');root.append(curves);renderSportSeries(curves,series,{ftp:historical?.ftp,bounds:historical?.power_zone_bounds});}
-  else root.append(el('p',own?'El resumen ya está disponible. Si faltan curvas, completa la preparación del historial desde Garmin → Importar historial. Algunas actividades no incluyen registros detallados.':'El resumen ya está disponible. Las curvas aparecerán cuando el deportista las haya preparado y autorizado para ti.','ap-muted'));
+  else root.append(el('p',a.source==='garmin_api'
+   ? 'Garmin ha entregado el resumen de esta actividad, pero AsturPower todavía no ha recibido y preparado su FIT detallado. Por eso no hay curvas de pulso, potencia ni cadencia. No se deben inventar valores a partir de las medias.'
+   : own?'El resumen ya está disponible. Si faltan curvas, completa la preparación del historial desde Garmin → Importar historial. Algunas actividades no incluyen registros detallados.'
+     :'El resumen ya está disponible. Las curvas aparecerán cuando el deportista las haya preparado y autorizado para ti.','ap-muted'));
  }).catch(error=>{if(!closed&&root.isConnected)status.textContent=error.message;});
  return ()=>{closed=true;};
 }

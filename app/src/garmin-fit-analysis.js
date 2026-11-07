@@ -15,13 +15,15 @@ function timeMs(value){
  if(typeof value==='string')return Date.parse(value);
  return NaN;
 }
-function sportOf(value){
+function sportOf(value,subSport=null){
  const str=String(value??'').toLowerCase().replace(/[_\s-]/g,'');
+ const sub=String(subSport??'').toLowerCase().replace(/[_\s-]/g,'');
  if(str.includes('cycling')||str.includes('biking'))return 'cycling';
  if(str.includes('running'))return 'running';
  if(str.includes('swimming'))return 'swimming';
  if(str.includes('walking'))return 'walking';
- if(str.includes('strength'))return 'strength';
+ // Garmin strength activities can use sport=TRAINING and subSport=STRENGTH_TRAINING.
+ if(str.includes('strength')||(str==='training'&&sub.includes('strength')))return 'strength';
  return 'other';
 }
 export function normalizedPower(records,timerSeconds){
@@ -56,7 +58,7 @@ export function fitClassification(decoded){
  if(sessions.length!==1)return 'multi_session';
  const s=sessions[0],start=timeMs(s.startTime),timer=Number(s.totalTimerTime);
  if(!Number.isFinite(start)||start<Date.UTC(1990,0,1)||!Number.isFinite(timer)||timer<=0||timer>172800)return 'invalid_session';
- if(sportOf(s.sport)==='other')return 'unsupported_sport';
+ if(sportOf(s.sport,s.subSport)==='other')return 'unsupported_sport';
  const timedLaps=(decoded.messages.lapMesgs||[]).some(l=>typeof l.totalTimerTime==='number'&&l.totalTimerTime>0&&Number.isFinite(timeMs(l.startTime)));
  if(!records.length&&!timedLaps&&![recorded(s.normalizedPower,3500),recorded(s.intensityFactor,10),recorded(s.trainingStressScore,5000)].some(v=>v!==null))return 'few_records';
  return null;
@@ -68,7 +70,7 @@ export function analyzeFitDecoded(decoded){
  if(fitClassification(decoded))return null;
  const session=sessions[0],started=timeMs(session.startTime),timer=Number(session.totalTimerTime);
  if(!Number.isFinite(started)||started<Date.UTC(1990,0,1)||!Number.isFinite(timer)||timer<=0||timer>172800)return null;
- const sport=sportOf(session.sport),start=new Date(started).toISOString();
+ const sport=sportOf(session.sport,session.subSport),start=new Date(started).toISOString();
  const distance=typeof session.totalDistance==='number'&&Number.isFinite(session.totalDistance)?session.totalDistance:null;
  const power=sport==='cycling'?normalizedPower(records,timer):{np:null,powerSeconds:0,coverage:0};
  const deviceNp=Number(session.normalizedPower);
