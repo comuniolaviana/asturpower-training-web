@@ -5,7 +5,7 @@ import {mountPMC} from '../app/src/pmc-ui.js';
 import {loadPMCData} from '../app/src/pmc-data.js';
 import {fakeClient,IDs} from './fake-client.mjs';
 const flush=async()=>{for(let i=0;i<6;i++)await new Promise(r=>setTimeout(r,0));};
-const data={allowed:true,activities:[{id:'a',title:'Real',started_at:'2026-11-07T10:00:00Z'}],metrics:[{activity_id:'a',tss:70,tss_source:'garmin_recorded'}],physiology:[],workouts:[{id:'w',title:'<img src=x>',scheduled_date:'2026-11-08',status:'planned',estimated_tss:80}]};
+const data={allowed:true,activities:[{id:'old',title:'Primer historial',started_at:'2025-12-01T10:00:00Z'},{id:'a',title:'Real',started_at:'2026-11-07T10:00:00Z'}],metrics:[{activity_id:'old',tss:45,tss_source:'garmin_recorded'},{activity_id:'a',tss:70,tss_source:'garmin_recorded'}],physiology:[],workouts:[{id:'w',title:'<img src=x>',scheduled_date:'2026-11-08',status:'planned',estimated_tss:80}]};
 function setup(loader=async()=>data){
  const dom=new JSDOM('<div id="root"></div>'),root=dom.window.document.querySelector('#root');
  mountPMC({root,coachId:'c',athletes:[{user_id:'a',display_name:'<img src=x>'},{user_id:'b',display_name:'Otra'}],loader,clock:()=>new Date('2026-11-07T15:00:00Z')});
@@ -36,4 +36,29 @@ test('PMC reads respect active link and consent and query only that coach and at
  assert.deepEqual(result.workouts.map(w=>w.id),['ok']);assert.equal(result.allowed,true);
  client.state.tables.athlete_coach_fit_sharing=[];assert.equal((await loadPMCData(client,IDs.coach,IDs.a)).allowed,false);
  client.state.tables.coach_athletes=[];await assert.rejects(loadPMCData(client,IDs.coach,IDs.a),/vinculado/);
+});
+
+
+test('unknown Garmin TSS hides all CTL/ATL/TSB numbers and chart, but preserves the daily list and missing source',async()=>{
+ const incomplete={...data,activities:[...data.activities,{id:'missing',title:'<img src=x onerror=alert(1)> Rodillo sin potencia',sport:'cycling',started_at:'2026-11-06T10:00:00Z'}]};
+ const t=setup(async()=>incomplete);t.change('[data-pmc-athlete]','a');await flush();
+ assert.equal(t.root.querySelectorAll('.pmc-line').length,0);
+ assert.match(t.root.querySelector('[data-pmc-graph]').textContent,/Gráfica retirada/);
+ assert.equal(t.root.querySelector('[data-pmc-current]').textContent.includes('—'),true);
+ assert.equal(t.root.querySelector('[data-pmc-target]').textContent.includes('—'),true);
+ assert.match(t.root.querySelector('[data-pmc-quality]').textContent,/1 de 3 actividades/);
+ assert.match(t.root.querySelector('[data-pmc-audit]').textContent,/Rodillo sin potencia/);
+ assert.equal(t.root.querySelector('img'),null);
+ t.change('[data-pmc-date]','2026-11-06');
+ assert.match(t.root.querySelector('[data-pmc-day]').textContent,/carga total desconocida/);
+ t.dom.window.close();
+});
+test('unknown planned TSS keeps the historical curve but suppresses forecast and future figures',async()=>{
+ const pending={...data,workouts:[...data.workouts,{id:'unknown',title:'Fuerza',sport:'strength',scheduled_date:'2026-11-09',status:'planned',estimated_tss:null}]};
+ const t=setup(async()=>pending);t.change('[data-pmc-athlete]','a');await flush();
+ assert.equal(t.root.querySelectorAll('.pmc-line').length,3);
+ assert.equal(t.root.querySelector('[data-pmc-current]').textContent.includes('—'),false);
+ assert.equal(t.root.querySelector('[data-pmc-target]').textContent.includes('—'),true);
+ assert.match(t.root.querySelector('[data-pmc-quality]').textContent,/Previsión oculta/);
+ t.dom.window.close();
 });
