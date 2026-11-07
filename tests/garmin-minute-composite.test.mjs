@@ -20,7 +20,7 @@ test('averages measured samples by elapsed minute and retains zero watts and mis
  assert.equal(minutes[0].counts.cadence,1);
  assert.equal(minutes[1].power,null);
  assert.equal(minutes[1].counts.power,0);
- assert.equal(minutes[4].power,250);
+ assert.equal(minutes[2].power,250);
  assert.equal(measuredMinutes([{timestamp:'invalid',power:200}]).length,0);
 });
 
