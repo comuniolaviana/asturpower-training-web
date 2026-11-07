@@ -1,3 +1,4 @@
+import {resumeEffortRecords} from '../netlify/lib/effort-records-scheduler.mjs';
 // Isolated full staging adapter; private modules require explicit activation.
 import { createGarminStartHandler, createGarminStatusHandler, createGarminCallbackHandler,
   createGarminDisconnectHandler, garminConfigurationIssues } from '../netlify/lib/garmin-oauth-service.mjs';
@@ -84,6 +85,7 @@ export function createAppWorker(dependencies={}){
     },
     async scheduled(event,env,context){
       if(env.SUPABASE_URL!==SUPABASE_URL)return;
+      if(env.ASTURPOWER_APP_ENABLED==='true')context.waitUntil(resumeEffortRecords({env,createClientFn:dependencies.createClientFn}));
       return receiver.scheduled(event,env,context);
     },
   };

@@ -116,7 +116,8 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
       mountAccountEmail({root:emailContent,client,user:accountUser,notice:emailNoticeUser===user.id?emailNotice:'',onRequested:message=>{emailNotice=message;emailNoticeUser=accountUser.id;}});
     }
     if(root.querySelector('#hub-weight'))void mountWeight({root:root.querySelector('#hub-weight'),client,user});
-    if(root.querySelector('#hub-zones'))void mountZones({root:root.querySelector('#hub-zones'),client,user,kind:view==='zones-power'?'power':'hr'});
+    const zoneRoot=root.querySelector('#hub-zones');
+    if(zoneRoot)void mountZones({root:zoneRoot,client,user,kind:view==='zones-power'?'power':'hr'}).then(dispose=>{if(zoneRoot.isConnected)hubDispose=dispose;else dispose?.();});
     const newsRoot=root.querySelector('#hub-news-home,#hub-news-all');
     if(!newsRoot&&['athlete','coach'].includes(data.role))void updateNewsBadge();
     if(newsRoot)hubDispose=mountNews({root:newsRoot,client,user,all:view==='news',onNavigate:navigateHub,onCount:count=>{const badge=root.querySelector('[data-news-count]');if(badge){badge.hidden=!count;badge.textContent=count>99?'99+':String(count);}}});

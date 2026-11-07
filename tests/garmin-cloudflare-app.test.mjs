@@ -124,8 +124,9 @@ test('scheduled receiver processes an encrypted fictitious delivery and clears i
   const serialized=JSON.stringify(minimizeGarminNotification(activityBody()));
   fixture.inbox.set(id,{id,payload_ciphertext:encryptedSecret(serialized,fixture.env.GARMIN_TOKEN_ENCRYPTION_KEY,'inbox:'+id),
     received_at:'2026-11-05T12:00:00Z',status:'pending',attempts:0,cursor:0});
-  await createAppWorker({repositoryFactory:()=>fixture.repo}).scheduled({},fixture.env,{waitUntil:task=>tasks.push(task)});
+  let resumed=0;
+  await createAppWorker({repositoryFactory:()=>fixture.repo,createClientFn:()=>({rpc:async name=>{assert.equal(name,'dispatch_pending_effort_jobs');resumed++;return {error:null};}})}).scheduled({},fixture.env,{waitUntil:task=>tasks.push(task)});
   await Promise.all(tasks);
-  assert.equal(tasks.length,1);assert.equal(fixture.activities.size,1);
+  assert.equal(tasks.length,2);assert.equal(resumed,1);assert.equal(fixture.activities.size,1);
   assert.equal(fixture.inbox.get(id).status,'done');assert.equal(fixture.inbox.get(id).payload_ciphertext,null);
 });
