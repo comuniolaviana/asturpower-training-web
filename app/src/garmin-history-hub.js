@@ -1,3 +1,4 @@
+import {recoverRecentFit} from './garmin-single-fit-recovery.js';
 import {listOriginals,uploadOriginal} from './garmin-original-vault.js';
 import {previewGarminHistory,saveGarminHistory} from './garmin-history-import.js';
 import {buildFullCatalog} from './garmin-full-catalog.js';
@@ -39,7 +40,34 @@ export function mountHistoryHub({root,client,user,onCalendar}){
  const start=el('button','Preparar historial guardado','button primary');start.type='button';start.disabled=true;
  const cancel=el('button','Detener','button secondary');cancel.type='button';cancel.hidden=true;
  const progress=el('p','','garmin-note');progress.setAttribute('role','status');progress.setAttribute('aria-live','polite');
- details.append(selected,input,consent,start,cancel,progress);section.append(details);root.append(section);
+ details.append(selected,input,consent,start,cancel,progress);section.append(details);
+ const repair=el('details',undefined,'garmin-settings-details');repair.append(el('summary','Completar actividad reciente desde un FIT'));
+ repair.append(el('p','Si Garmin solo entregó el resumen, exporta el FIT original de esa actividad en Garmin Connect y selecciónalo aquí. Se cotejan deporte, fecha y duración con una única sesión existente. No se crea otra actividad ni se sustituyen los originales. Esta recuperación manual no equivale todavía a la descarga automática de Garmin.'));
+ const fitInput=el('input');fitInput.type='file';fitInput.accept='.fit,application/octet-stream';fitInput.setAttribute('aria-label','FIT original de la actividad reciente');
+ const fitConsent=el('label',undefined,'garmin-optin'),fitCheck=el('input');fitCheck.type='checkbox';
+ fitConsent.append(fitCheck,el('span','Autorizo guardar en mi cuenta privada el archivo FIT íntegro, incluidos sus datos fisiológicos y de ubicación, y compartir las series deportivas derivadas únicamente con los entrenadores a los que ya haya concedido este permiso.'));
+ const fitStart=el('button','Recuperar curvas de esta actividad','button primary');fitStart.type='button';fitStart.disabled=true;
+ const fitCancel=el('button','Detener recuperación','button secondary');fitCancel.type='button';fitCancel.hidden=true;
+ const fitStatus=el('p','','garmin-note');fitStatus.setAttribute('role','status');fitStatus.setAttribute('aria-live','polite');
+ repair.append(fitInput,fitConsent,fitStart,fitCancel,fitStatus);section.append(repair);root.append(section);
+ let fitBusy=false,fitController=null,fitClosed=false;
+ const fitLock=()=>{fitInput.disabled=fitCheck.disabled=fitBusy;fitStart.disabled=fitBusy||!fitCheck.checked||!fitInput.files?.length;fitCancel.hidden=!fitBusy;};
+ fitInput.addEventListener('change',()=>{fitCheck.checked=false;fitStatus.textContent=fitInput.files?.[0]?.name||'';fitLock();});
+ fitCheck.addEventListener('change',fitLock);
+ fitCancel.addEventListener('click',()=>{fitController?.abort();fitCancel.disabled=true;});
+ fitStart.addEventListener('click',async()=>{
+  if(fitBusy||!fitCheck.checked||!fitInput.files?.[0])return;
+  fitBusy=true;fitController=new AbortController();fitCancel.disabled=false;fitLock();
+  try{
+   const result=await recoverRecentFit(client,user.id,fitInput.files[0],{consent:true,signal:fitController.signal,onProgress:value=>{if(!fitClosed&&section.isConnected)fitStatus.textContent=value;}});
+   if(!fitClosed&&section.isConnected){
+    fitStatus.textContent='Curvas recuperadas para «'+result.activity.title+'» ('+result.records+' registros). Abre la actividad en Calendario para consultar sus datos.';
+    fitInput.value='';fitCheck.checked=false;await refresh();
+   }
+  }catch(error){if(!fitClosed&&section.isConnected)fitStatus.textContent=error.name==='AbortError'?'Recuperación detenida; los archivos ya conservados permanecen intactos.':error.message;}
+  finally{fitBusy=false;fitController=null;if(!fitClosed&&section.isConnected)fitLock();}
+ });
+
  let archive=null,file=null,busy=false,closed=false,controller=null;
  const live=()=>!closed&&section.isConnected;
  const lock=()=>{section.dataset.garminImportRunning=String(busy);input.disabled=check.disabled=busy;start.disabled=busy||!check.checked||(!file&&!archive);cancel.hidden=!busy;};
@@ -64,5 +92,5 @@ export function mountHistoryHub({root,client,user,onCalendar}){
   }catch(error){if(live())progress.textContent=error.name==='AbortError'?'Importación detenida. El avance guardado se conserva; puedes continuar más tarde.':error.message;}
   finally{busy=false;controller=null;if(live())lock();}
  });
- void refresh();return ()=>{closed=true;controller?.abort();};
+ void refresh();return ()=>{closed=true;fitClosed=true;controller?.abort();fitController?.abort();};
 }
