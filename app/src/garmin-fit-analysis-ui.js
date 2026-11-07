@@ -13,12 +13,13 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
  const consent=el('label',undefined,'garmin-optin'),check=el('input');check.type='checkbox';
  consent.append(check,el('span','Autorizo analizar mis archivos deportivos y guardar sus curvas, vueltas y registros deportivos en mi cuenta. Se compartirán solo con los entrenadores para los que haya autorizado las series. Mi ZIP original y mis rutas GPS permanecen privados.'));
  const start=el('button','Completar series y revisar historial','button primary'),cancel=el('button','Detener análisis','button secondary');
+ const retry=el('button','Revisar solo archivos pendientes','button secondary');retry.type='button';retry.disabled=true;
  start.type=cancel.type='button';start.disabled=true;cancel.hidden=true;
  const status=el('p','','garmin-note');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
- const results=el('div');container.append(title,intro,consent,start,cancel,status,results);root.append(container);
- let busy=false,closed=false,controller=null;
+ const results=el('div');container.append(title,intro,consent,start,retry,cancel,status,results);root.append(container);
+ let busy=false,closed=false,controller=null,pendingCount=0;
  const alive=()=>!closed&&container.isConnected;
- const unlock=()=>{busy=false;controller=null;if(alive()){start.disabled=!check.checked;check.disabled=false;cancel.hidden=true;cancel.disabled=false;}};
+ const unlock=()=>{busy=false;controller=null;if(alive()){container.dataset.garminImportRunning='false';start.disabled=!check.checked;retry.disabled=!check.checked||!pendingCount;check.disabled=false;cancel.hidden=true;cancel.disabled=false;}};
  function round(n){return typeof n==='number'&&Number.isFinite(n)?n.toLocaleString('es-ES',{maximumFractionDigits:2}):'—';}
  async function reload(){
   try{
@@ -28,11 +29,13 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
    const linked=summary.analysis.length,withNp=summary.analysis.filter(x=>x.normalized_power_watts!==null).length;
    const withTss=summary.analysis.filter(x=>x.tss!==null).length;
    results.append(el('p','Actividades vinculadas a su FIT: '+linked+'. Con NP disponible: '+withNp+'. Con TSS calculado: '+withTss+'.'));
-   results.append(el('p','Actividades con series deportivas completas preparadas: '+(summary.series||[]).length+'.'));
+   const withRecords=summary.analysis.filter(x=>Number(x.sample_count)>0&&summary.series.some(s=>s.activity_id===x.activity_id)).length;
+   results.append(el('p','Actividades con detalle deportivo preparado: '+(summary.series||[]).length+'. Con muestras: '+withRecords+'. Solo vueltas: '+((summary.series||[]).length-withRecords)+'.'));
    const reasons={};for(const d of summary.diagnostics||[])reasons[d.reason]=(reasons[d.reason]||0)+1;
-   const labels={series_saved:'Serie deportiva guardada',linked:'Vinculada',already_linked:'Ya vinculada',not_activity:'FIT de otra categoría',multi_session:'Varias sesiones: revisar',few_records:'Sin registros de muestras',invalid_session:'Sesión sin datos suficientes',unsupported_sport:'Deporte no reconocido',no_match:'Sin coincidencia demostrable',ambiguous_match:'Varias actividades candidatas',unreadable:'Archivo ilegible',size_limit:'Tamaño fuera de límite'};
+   const labels={series_saved:'Detalle deportivo guardado',linked:'Vinculada',already_linked:'Ya vinculada',not_activity:'FIT de otra categoría',multi_session:'Varias sesiones: revisar',few_records:'Sin registros de muestras',invalid_session:'Sesión sin datos suficientes',unsupported_sport:'Deporte no reconocido',no_match:'Sin coincidencia demostrable',ambiguous_match:'Varias actividades candidatas',unreadable:'Archivo ilegible',size_limit:'Tamaño fuera de límite'};
    const ulReasons=el('ul');for(const [key,count] of Object.entries(reasons))ulReasons.append(el('li',(labels[key]||key)+': '+count));results.append(ulReasons);
    const pending=(summary.diagnostics||[]).filter(d=>!['series_saved','linked','already_linked','not_activity'].includes(d.reason));
+   pendingCount=pending.length;retry.disabled=busy||!check.checked||!pendingCount;
    if(pending.length){
     const review=el('details'),heading=el('summary','Revisar archivos pendientes ('+pending.length+')'),list=el('div');review.append(heading,list);results.append(review);let page=0;
     function show(){list.replaceChildren();const ul=el('ul');for(const d of pending.slice(page*40,(page+1)*40))ul.append(el('li',(labels[d.reason]||d.reason)+' · '+d.file_name+' · '+d.pack_name));list.append(ul);
@@ -65,15 +68,15 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
    }
   }catch{if(alive())results.append(el('p','No se pudo consultar el análisis guardado.'));}
  }
- check.addEventListener('change',()=>{start.disabled=busy||!check.checked;});
+ check.addEventListener('change',()=>{start.disabled=busy||!check.checked;retry.disabled=busy||!check.checked||!pendingCount;});
  cancel.addEventListener('click',()=>{controller?.abort();cancel.disabled=true;});
- start.addEventListener('click',async()=>{
+ const run=async(retryPending)=>{
   if(busy||!check.checked)return;
-  busy=true;check.disabled=true;start.disabled=true;cancel.hidden=false;controller=new AbortController();
+  busy=true;container.dataset.garminImportRunning='true';check.disabled=true;start.disabled=retry.disabled=true;cancel.hidden=false;controller=new AbortController();
   status.textContent='Preparando el análisis FIT privado. Mantén abierta esta pestaña.';
   try{
    const finished=await processGarminFitArchive(client,ownerId,archiveId,{
-    signal:controller.signal,includeDetails:true,onProgress:v=>{
+    signal:controller.signal,includeDetails:true,retryPending,onProgress:v=>{
      if(!alive())return;
      status.textContent='Paquete '+v.pack+'/'+v.packages+' · FIT examinados: '+
       round(v.done)+'/'+round(v.total)+' · Nuevas actividades vinculadas: '+round(v.linked)+
@@ -92,7 +95,8 @@ export function mountGarminFitAnalysis({root,client,ownerId,archiveId}){
     await reload();
    }
   }finally{unlock();}
- });
+ };
+ start.addEventListener('click',()=>void run(false));retry.addEventListener('click',()=>void run(true));
  void reload();
  return ()=>{closed=true;controller?.abort();};
 }

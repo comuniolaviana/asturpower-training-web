@@ -46,7 +46,8 @@ export async function readAnalysisSummary(client,ownerId,archiveId,{includeDetai
  }
  return result;
 }
-export async function processGarminFitArchive(client,ownerId,archiveId,{signal,onProgress=()=>{},includeDetails=false}={}){
+export async function processGarminFitArchive(client,ownerId,archiveId,{signal,onProgress=()=>{},includeDetails=false,retryPending=false}={}){
+ if(retryPending&&!includeDetails)throw new Error('La revisión de pendientes requiere diagnóstico detallado.');
  canceled(signal);await assertOwner(client,ownerId);
  const catalog=await loadFullCatalog(client,ownerId,archiveId);
  if(!catalog.length)throw new Error('Primero crea el índice de archivos Garmin.');
@@ -62,18 +63,22 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
  const knownMetrics=new Map(summary.analysis.map(x=>[x.activity_id,x]));
  const knownSeries=new Set((summary.series||[]).map(x=>x.activity_id));
  const processingVersion=includeDetails?FIT_ANALYSIS_VERSION:1;
+ const pendingKeys=new Set((summary.diagnostics||[]).filter(d=>!['series_saved','linked','already_linked','not_activity'].includes(d.reason)).map(d=>d.pack_name+'\n'+d.file_name));
+ if(retryPending&&!pendingKeys.size)return {scanned:0,total:0,newLinks:0,newNormalizedPower:0,newTss:0,unsupported:0,seriesSaved:0,missingFtp:ftpVersions.every(x=>x.ftp==null)};
  const {blob}=await openPrivateGarminArchive(client,ownerId,archiveId,{signal});
  const outer=await zipEntries(blob),outerMap=new Map(outer.map(x=>[x.name,x]));
  const accepts=e=>includeDetails?['FIT','TCX','GPX'].includes(e.kind):e.kind==='FIT';
- const totalFitFiles=catalog.reduce((n,pack)=>n+pack.entries.filter(accepts).length,0);
- let processedFitFiles=summary.progress.filter(r=>(r.processing_version||1)>=processingVersion).reduce((n,r)=>n+r.scanned,0);
+ const selectedByPack=new Map();
+ for(const pack of catalog)selectedByPack.set(pack.pack_name,pack.entries.filter(accepts).filter(entry=>!retryPending||pendingKeys.has(pack.pack_name+'\n'+entry.name)));
+ const totalFitFiles=[...selectedByPack.values()].reduce((n,entries)=>n+entries.length,0);
+ let processedFitFiles=retryPending?0:summary.progress.filter(r=>(r.processing_version||1)>=processingVersion).reduce((n,r)=>n+r.scanned,0);
  let linked=0,errors=0,withNp=0,withTss=0,seriesSaved=0,diagnostics=[];
  for(let packIndex=0;packIndex<catalog.length;packIndex++){
   canceled(signal);await assertOwner(client,ownerId);
   const pack=catalog[packIndex],entry=outerMap.get(pack.pack_name);
   if(!entry||entry.size>MAX_PACK_BYTES)throw new Error('No se encuentra un paquete original del catálogo.');
-  const stored=progressByPack.get(pack.pack_name),previous=(stored?.processing_version||1)>=processingVersion?stored:null,start=previous?.next_index||0;
-  const fitFiles=pack.entries.filter(accepts);
+  const stored=progressByPack.get(pack.pack_name),previous=!retryPending&&(stored?.processing_version||1)>=processingVersion?stored:null,start=previous?.next_index||0;
+  const fitFiles=selectedByPack.get(pack.pack_name);
   if(start>=fitFiles.length)continue;
   onProgress({stage:'pack',pack:packIndex+1,packages:catalog.length,done:processedFitFiles,total:totalFitFiles,linked,withNp,withTss});
   const packBytes=await unzipEntry(blob,entry,MAX_PACK_BYTES);
@@ -90,6 +95,7 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
     if(recorded.error)throw new Error('No se pudo guardar el diagnóstico. El avance no se ha adelantado; puedes reanudar.');
     diagnostics=[];
    }
+   if(retryPending)return; // Never replace a completed full-scan cursor with a small subset.
    const value={athlete_id:ownerId,archive_id:archiveId,pack_name:pack.pack_name,
     next_index:index,scanned:checked,linked:alreadyLinked,updated_at:new Date().toISOString(),...(includeDetails?{processing_version:FIT_ANALYSIS_VERSION}:{})};
    const saved=await client.from('garmin_fit_scan_progress').upsert(value,{onConflict:'athlete_id,archive_id,pack_name'});
@@ -128,7 +134,7 @@ export async function processGarminFitArchive(client,ownerId,archiveId,{signal,o
     const prior=knownMetrics.get(activityId),sameSource=!prior?.source_file_key||prior.source_file_key===fileKey;
     if(includeDetails&&matched&&knownActivityIds.has(activityId)&&sameSource){
      if(scheduled.has(activityId))await flush();
-     const needsSeries=!knownSeries.has(activityId)&&(decoded.messages.recordMesgs||[]).length;
+     const needsSeries=!knownSeries.has(activityId)&&((decoded.messages.recordMesgs||[]).length||(decoded.messages.lapMesgs||[]).length);
      scheduled.add(activityId);
      saveDetail=async diagnostic=>{
       canceled(signal);

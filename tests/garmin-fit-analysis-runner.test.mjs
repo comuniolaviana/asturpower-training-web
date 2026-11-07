@@ -105,10 +105,20 @@ test('upgrade scans old checkpoints once, stores every sports sample and durable
  assert.equal(data.rows.length,120);assert.ok(data.fields.includes('heartRate'));assert.ok(data.fields.includes('power'));assert.ok(!data.fields.includes('positionLat'));
  const again=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});assert.equal(again.seriesSaved,0);assert.equal(f.series.length,1);
 });
-test('session-only FIT imports its recorded IF/TSS without claiming or attempting nonexistent curves',async()=>{
+test('FIT without samples retains recorded IF/TSS and measured laps without manufacturing curves',async()=>{
  const f=await fixture({sessionOnly:true});const result=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true});
- assert.equal(result.newLinks,1);assert.equal(result.seriesSaved,0);assert.equal(f.series.length,0);assert.equal(f.analyses[0].device_tss,2.1);assert.equal(f.analyses[0].device_intensity_factor,0.8);assert.equal(f.diagnostics[0].reason,'linked');
+ assert.equal(result.newLinks,1);assert.equal(result.seriesSaved,1);assert.equal(f.series.length,1);assert.equal(f.analyses[0].device_tss,2.1);assert.equal(f.analyses[0].device_intensity_factor,0.8);assert.equal(f.diagnostics[0].reason,'series_saved');
+ const series=await loadSportSeries(f.client,OWNER,OWNER,ACTIVITY);assert.equal(series.rows.length,0);assert.equal(series.laps.length,1);assert.equal(f.analyses[0].sample_count,0);
  const loaded=await readAnalysisSummary(f.client,OWNER,f.archiveId);assert.equal(loaded.analysis[0].tss,2.1);assert.equal(loaded.analysis[0].tss_source,'garmin_recorded');
+});
+test('targeted retry recovers a pending file while preserving the completed full-scan checkpoint',async()=>{
+ const f=await fixture(),pack='DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip',name='private_session_123.fit';
+ f.progress.push({pack_name:pack,next_index:1,scanned:1,linked:0,processing_version:3});
+ f.diagnostics.push({pack_name:pack,file_name:name,file_key:createHash('sha256').update(pack+'\n'+name).digest('hex'),reason:'unreadable'});
+ const before=JSON.stringify(f.progress);
+ const recovered=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true,retryPending:true});
+ assert.equal(recovered.scanned,1);assert.equal(recovered.total,1);assert.equal(recovered.seriesSaved,1);assert.equal(f.diagnostics[0].reason,'series_saved');assert.equal(JSON.stringify(f.progress),before);
+ const again=await processGarminFitArchive(f.client,OWNER,f.archiveId,{includeDetails:true,retryPending:true});assert.equal(again.total,0);assert.equal(again.seriesSaved,0);assert.equal(f.writes,1);
 });
 test('an alternative file cannot overwrite the metrics or publish series for an already bound source',async()=>{
  const f=await fixture();await processGarminFitArchive(f.client,OWNER,f.archiveId);

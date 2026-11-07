@@ -18,7 +18,12 @@ export function decodeSportXml(bytes,kind,Parser=globalThis.DOMParser){
    for(const [key,name] of [['power','Watts'],['cadence','Cadence'],['speed','Speed'],['altitude','AltitudeMeters'],['distance','DistanceMeters']]){const v=number(p,name);if(v!==null)r[key]=v;}
    const hr=elements(p,'HeartRateBpm')[0];if(hr){const value=number(hr,'Value');if(value!==null)r.heartRate=value;}return r;
   });
-  laps=elements(a,'Lap').map(l=>({startTime:new Date(l.getAttribute('StartTime')),totalTimerTime:number(l,'TotalTimeSeconds'),totalDistance:number(l,'DistanceMeters')}));
+  laps=elements(a,'Lap').map(l=>{
+   const lap={startTime:new Date(l.getAttribute('StartTime')),totalTimerTime:number(l,'TotalTimeSeconds'),totalDistance:number(l,'DistanceMeters')};
+   for(const [key,name] of [['maxSpeed','MaximumSpeed'],['totalCalories','Calories'],['avgCadence','Cadence']]){const v=number(l,name);if(v!==null)lap[key]=v;}
+   for(const [key,name] of [['avgHeartRate','AverageHeartRateBpm'],['maxHeartRate','MaximumHeartRateBpm']]){const block=elements(l,name)[0],v=block?number(block,'Value'):null;if(v!==null)lap[key]=v;}
+   return lap;
+  });
   session.startTime=new Date(text(a,'Id')||points[0]?.timestamp);
   const timers=laps.map(l=>l.totalTimerTime).filter(v=>v!==null),distances=laps.map(l=>l.totalDistance).filter(v=>v!==null);
   session.totalTimerTime=timers.length?timers.reduce((a,b)=>a+b,0):null;

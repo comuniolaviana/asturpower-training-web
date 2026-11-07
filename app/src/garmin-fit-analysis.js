@@ -57,7 +57,8 @@ export function fitClassification(decoded){
  const s=sessions[0],start=timeMs(s.startTime),timer=Number(s.totalTimerTime);
  if(!Number.isFinite(start)||start<Date.UTC(1990,0,1)||!Number.isFinite(timer)||timer<=0||timer>172800)return 'invalid_session';
  if(sportOf(s.sport)==='other')return 'unsupported_sport';
- if(!records.length&&![recorded(s.normalizedPower,3500),recorded(s.intensityFactor,10),recorded(s.trainingStressScore,5000)].some(v=>v!==null))return 'few_records';
+ const timedLaps=(decoded.messages.lapMesgs||[]).some(l=>typeof l.totalTimerTime==='number'&&l.totalTimerTime>0&&Number.isFinite(timeMs(l.startTime)));
+ if(!records.length&&!timedLaps&&![recorded(s.normalizedPower,3500),recorded(s.intensityFactor,10),recorded(s.trainingStressScore,5000)].some(v=>v!==null))return 'few_records';
  return null;
 }
 export function analyzeFitDecoded(decoded){

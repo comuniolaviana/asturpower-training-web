@@ -14,6 +14,9 @@ export function mountOriginalViewer(root){
   if(depth===0)original={blob,name};
   else if(back)content.append(button('Volver al paquete anterior',()=>void open(back.blob,back.name,depth-1,back.back)));
   else if(original)content.append(button('Volver al archivo original',()=>void open(original.blob,original.name)));
+  content.append(button('Descargar este archivo original',()=>{
+   const url=URL.createObjectURL(blob),a=el(doc,'a');a.href=url;a.download=name.split(/[\\/]/).at(-1)||'garmin-original';doc.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+  }));
   if(depth>3){status.textContent='Hay varios ZIP anidados. El original completo sigue disponible para descargar.';return;}
   if(/\.zip$/i.test(name)){
    try{

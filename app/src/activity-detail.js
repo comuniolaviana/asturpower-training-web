@@ -35,7 +35,7 @@ export function mountActivityDetail({root,client,userId,activityId}){
   if(m&&(m.intensity_factor!==null||m.tss!==null))root.append(el('p','IF: '+loadSourceLabel(m.if_source)+' · TSS: '+loadSourceLabel(m.tss_source)+'.','ap-muted'));
   if(m?.device_ftp_watts)root.append(el('p','FTP registrado en esta sesión Garmin: '+fmt(m.device_ftp_watts,' W')+'. No se aplica a otras fechas.','ap-muted'));
   if(m?.device_tss!==null&&m?.device_tss!==undefined&&m.tss_source==='historical_ftp')root.append(el('p','Valores originales de Garmin: IF '+fmt(m.device_intensity_factor,'',3)+' · TSS '+fmt(m.device_tss)+'. El panel principal muestra el recálculo con el FTP histórico confirmado.','ap-muted'));
-  if(m&&m.tss===null)root.append(el('p','TSS pendiente: se necesita un FTP verificable vigente en la fecha de esta actividad.','ap-muted'));
+  if(m&&m.tss===null)root.append(el('p',m.normalized_power_watts===null&&m.device_intensity_factor==null?'TSS pendiente: el original no aporta datos de intensidad suficientes para calcularlo.':'TSS pendiente: se necesita un FTP verificable vigente en la fecha de esta actividad.','ap-muted'));
   if(series){const curves=el('section');root.append(curves);renderSportSeries(curves,series,{ftp:historical?.ftp,bounds:historical?.power_zone_bounds});}
   else root.append(el('p',own?'El resumen ya está disponible. Si faltan curvas, completa la preparación del historial desde Garmin → Importar historial. Algunas actividades no incluyen registros detallados.':'El resumen ya está disponible. Las curvas aparecerán cuando el deportista las haya preparado y autorizado para ti.','ap-muted'));
  }).catch(error=>{if(!closed&&root.isConnected)status.textContent=error.message;});
