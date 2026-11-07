@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
-import {chartPreview,measuredMinutes,OVERLAY_METRICS} from '../app/src/garmin-fit-charts.js';
+import {chartPreview,measuredMinutes,measuredMinuteSamples,OVERLAY_METRICS} from '../app/src/garmin-fit-charts.js';
 import {mountFitCharts} from '../app/src/garmin-fit-chart-ui.js';
 
 test('averages measured samples by elapsed minute and retains zero watts and missing cadence',()=>{
@@ -110,4 +110,66 @@ test('minute series preserves negative grades, physical zero, last cumulative di
  assert.equal(minutes[1].power,null);
  assert.equal(minutes[1].counts.power,0);
  assert.deepEqual(measuredMinutes(items,null,[{key:'positionLat',label:'GPS',unit:'deg'}]),[]);
+});
+
+
+test('inside a minute, coach overlays real seconds and never draws lines across missing recordings',()=>{
+ const base=Date.parse('2026-11-06T17:30:20Z');
+ const record=(second,heartRate,power,cadence,temperature)=>({timestamp:new Date(base+second*1000).toISOString(),heartRate,power,cadence,temperature});
+ const records=[
+  record(0,110,0,80,15),
+  record(1,111,140,81,16),
+  record(2,112,200,82,17),
+  record(8,119,230,84,18),
+  record(30,130,null,90,16),
+  record(61,141,250,92,16),
+ ];
+ const dom=new JSDOM('<div id="root"></div>'),root=dom.window.document.getElementById('root');
+ try{
+  mountFitCharts(root,chartPreview(records),{records,startTime:new Date(base).toISOString()});
+  const overlay=root.querySelector('.garmin-minute-overlay');
+  assert.ok(overlay);
+  const zoom=overlay.querySelector('[data-second-overlay]');
+  assert.ok(zoom);
+  assert.equal(zoom.querySelectorAll('circle[data-second-metric="power"]').length,4);
+  assert.equal(zoom.querySelectorAll('polyline[data-second-metric="power"]').length,1,'only points 0,1,2 are connected');
+  assert.equal(zoom.querySelectorAll('polyline[data-second-metric="heartRate"]').length,1);
+  const rawReadout=overlay.querySelector('[data-second-readout]');
+  assert.match(rawReadout.textContent,/segundo 0/);
+  assert.match(rawReadout.textContent,/Potencia: 0 W/);
+  const sampleControl=overlay.querySelector('[data-second-control]');
+  sampleControl.value='3';sampleControl.dispatchEvent(new dom.window.Event('input'));
+  assert.match(rawReadout.textContent,/segundo 8/);
+  assert.match(rawReadout.textContent,/Potencia: 230 W/);
+  const temperature=overlay.querySelector('[data-metric-toggle="temperature"]');
+  temperature.checked=true;temperature.dispatchEvent(new dom.window.Event('change'));
+  assert.equal(zoom.querySelectorAll('circle[data-second-metric="temperature"]').length,5);
+  assert.match(rawReadout.textContent,/Temperatura: 15 °C/);
+  const minuteControl=overlay.querySelector('[data-minute-control]');
+  minuteControl.value='1';minuteControl.dispatchEvent(new dom.window.Event('input'));
+  assert.match(overlay.querySelector('[data-second-status]').textContent,/1 registros reales/);
+  assert.match(rawReadout.textContent,/Potencia: 250 W/);
+  minuteControl.value='2';minuteControl.dispatchEvent(new dom.window.Event('input'));
+  assert.equal(zoom.querySelectorAll('circle[data-second-metric="heartRate"]').length,0);
+  assert.match(overlay.querySelector('[data-second-status]').textContent,/no contiene muestras/i);
+ }finally{dom.window.close();}
+});
+
+test('exact minute samples keep timestamps, preserve zero, avoid missing values and expose no GPS',()=>{
+ const base=Date.parse('2026-11-06T17:30:20Z');
+ const records=[
+  {timestamp:new Date(base+5200).toISOString(),heartRate:116,power:0,positionLat:40},
+  {timestamp:new Date(base+100).toISOString(),heartRate:110,power:180,positionLat:41},
+  {timestamp:new Date(base+60200).toISOString(),heartRate:130,power:null},
+  {timestamp:'garbage',heartRate:150,power:400},
+ ];
+ const metrics=OVERLAY_METRICS.filter(m=>['heartRate','power'].includes(m.key));
+ const samples=measuredMinuteSamples(records,new Date(base).toISOString(),0,metrics);
+ assert.deepEqual(samples.map(r=>r.second),[0.1,5.2]);
+ assert.deepEqual(samples.map(r=>r.values.power),[180,0]);
+ assert.equal(samples[0].values.heartRate,110);
+ assert.doesNotMatch(JSON.stringify(samples),/positionLat/);
+ assert.equal(measuredMinuteSamples(records,new Date(base).toISOString(),1,metrics).length,1);
+ assert.equal(measuredMinuteSamples(records,new Date(base).toISOString(),2,metrics).length,0);
+ assert.deepEqual(measuredMinuteSamples(records,new Date(base).toISOString(),0,[{key:'positionLat'}]),[]);
 });
