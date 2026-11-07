@@ -279,7 +279,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
       // A routine same-account refresh must not destroy the running importer.
       // Sign-out, account changes and explicit user updates still refresh immediately.
       if (!ignoreSession && user?.id && session?.user?.id === user.id &&
-          ['SIGNED_IN', 'TOKEN_REFRESHED'].includes(event) && importingHistory()) {
+          ['SIGNED_IN', 'TOKEN_REFRESHED'].includes(event) && (importingHistory()||['profile','weight','zones-hr','zones-power','news'].includes(view))) {
         user = session.user;
         return;
       }
@@ -287,7 +287,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
       setTimeout(() => { if (!disposed) void sync(); }, 0);
     }
   });
-  const onVisibility = () => { if (root.ownerDocument.visibilityState === 'visible' && user && !importingHistory()) void sync(); };
+  const onVisibility = () => { if (root.ownerDocument.visibilityState === 'visible' && user && !importingHistory() && !['profile','weight','zones-hr','zones-power','news'].includes(view)) void sync(); };
   root.ownerDocument.addEventListener('visibilitychange', onVisibility);
   loading();
   // Makes startup independent of whether the SDK already emitted INITIAL_SESSION.
