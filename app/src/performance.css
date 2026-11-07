@@ -22,3 +22,14 @@
 .garmin-minute-overlay .perf-scroll{max-width:100%;overflow-x:auto}
 .garmin-minute-overlay .button{min-height:40px;margin-right:8px}
 @media(max-width:600px){.garmin-minute-overlay{padding:12px}.garmin-minute-metrics{grid-template-columns:1fr 1fr;gap:4px}.garmin-minute-metrics label{font-size:11px}.garmin-minute-overlay .button{width:auto}}
+
+
+/* Minute drilldown: exact FIT samples, with touch-friendly selection. */
+.garmin-minute-zoom{margin:20px 0 14px;padding:14px;border:1px solid #cfdfd2;border-radius:12px;background:#f8fbf9;min-width:0}
+.garmin-minute-zoom h6{font-size:15px;line-height:1.35;color:#1c4b38;margin:0 0 8px}
+.garmin-minute-zoom .garmin-fit-chart{background:#fff}
+.garmin-minute-zoom>label{display:block;margin:12px 0 5px;font-size:13px}
+.garmin-minute-zoom input[type=range]{display:block;width:100%;margin:5px 0 12px;accent-color:#176a4c}
+.garmin-minute-zoom [data-second-readout]{font-size:12px;line-height:1.7;overflow-wrap:anywhere;color:#2f4d42}
+.garmin-minute-zoom [data-second-status]{font-size:12px}
+@media(max-width:600px){.garmin-minute-zoom{padding:10px}.garmin-minute-zoom h6{font-size:14px}}
