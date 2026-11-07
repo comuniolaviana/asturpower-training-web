@@ -1,4 +1,4 @@
-import {measuredMinutes,MINUTE_METRICS} from './garmin-fit-charts.js';
+import {measuredMinutes,MINUTE_METRICS,OVERLAY_METRICS} from './garmin-fit-charts.js';
 // The visible lines are a bounded graphical representation only.
 // All FIT records remain intact in the decoding worker and can be paged below.
 const NS='http://www.w3.org/2000/svg';
@@ -89,75 +89,142 @@ export function mountFitCharts(root,charts,{records=null,startTime=null}={}){
 // cannot share a meaningful numeric Y axis. The common X axis is elapsed time.
 // Missing minutes break the trace; no value is interpolated.
 export function renderMeasuredMinuteOverlay(root,records,startTime=null){
- const minutes=measuredMinutes(records,startTime);
- const metrics=MINUTE_METRICS.filter(m=>minutes.some(row=>row[m.key]!==null));
- if(!metrics.length)return;
+ if(!Array.isArray(records)||!records.length)return;
+ // Derive available metrics from the actual permitted sport samples. The
+ // interface never offers an empty sensor or guesses values for missing ones.
+ const observed=new Set();
+ for(const record of records){
+  for(const metric of OVERLAY_METRICS){
+   const v=record?.[metric.key];
+   if(typeof v==='number'&&Number.isFinite(v)&&(metric.min===undefined||v>=metric.min))observed.add(metric.key);
+  }
+  if(observed.size===OVERLAY_METRICS.length)break;
+ }
+ const available=OVERLAY_METRICS.filter(metric=>observed.has(metric.key));
+ if(!available.length)return;
+ const minutes=measuredMinutes(records,startTime,available);
+ if(!minutes.length)return;
  const doc=root.ownerDocument,section=create(doc,'section');
  section.className='garmin-minute-overlay';
- section.append(create(doc,'h5','Pulso, potencia y cadencia · minuto a minuto'));
- const note=create(doc,'p','Medias de las muestras realmente registradas en cada minuto. Los minutos sin medidas quedan vacíos. Las tres líneas comparten tiempo, pero cada color usa su propia escala: W, lpm y rpm no son comparables directamente.');
+ section.append(create(doc,'h5','Pulso, potencia y cadencia · superponer datos minuto a minuto'));
+ const note=create(doc,'p','Marca las métricas que quieras comparar. Se usan los valores realmente registrados, sin interpolar huecos. Cada curva tiene escala vertical propia; la distancia acumulada y las calorías muestran el último valor medido de cada minuto.');
  note.className='garmin-fit-chart-note';section.append(note);
- const svg=svgNode(doc,'svg',{viewBox:'0 0 760 260',role:'img','aria-label':'Curvas superpuestas de pulso, potencia y cadencia registradas por minuto'});
- svg.classList.add('garmin-fit-chart');
- const colors={heartRate:'#c44753',power:'#a16b10',cadence:'#246db8'};
+ const availableKeys=new Set(available.map(metric=>metric.key));
+ const selected=new Set(MINUTE_METRICS.map(metric=>metric.key).filter(key=>availableKeys.has(key)));
+ if(!selected.size)selected.add(available[0].key);
+ const pick=create(doc,'fieldset');pick.className='garmin-minute-metrics';
+ const legendTitle=create(doc,'legend','Elegir datos para superponer');pick.append(legendTitle);
+ for(const metric of available){
+  const label=create(doc,'label'),check=create(doc,'input');
+  check.type='checkbox';check.value=metric.key;check.checked=selected.has(metric.key);
+  check.setAttribute('data-metric-toggle',metric.key);
+  check.setAttribute('aria-label','Superponer '+metric.label);
+  label.append(check,doc.createTextNode(' '+metric.label+' ('+metric.unit+')'));
+  pick.append(label);
+  check.addEventListener('change',()=>{if(check.checked)selected.add(metric.key);else selected.delete(metric.key);draw();});
+ }
+ section.append(pick);
+ const svg=svgNode(doc,'svg',{viewBox:'0 0 760 260',role:'img','aria-label':'Comparación de métricas deportivas seleccionadas a lo largo de la actividad'});
+ svg.classList.add('garmin-fit-chart');section.append(svg);
+ const seriesLegend=create(doc,'div');seriesLegend.className='garmin-minute-legend';section.append(seriesLegend);
+ const colors=['#c44753','#a16b10','#246db8','#087b5d','#8b54a2','#bc5b28','#52732d','#994769','#48688e','#8b642e','#486c67','#806aa7'];
  const left=50,right=745,top=22,bottom=204,axisWidth=right-left;
- const maxMinute=Math.max(1,minutes.at(-1).minute);
+ const maxMinute=Math.max(1,minutes.at(-1).minute),byMinute=new Map(minutes.map(row=>[row.minute,row]));
  const x=minute=>left+Math.min(1,minute/maxMinute)*axisWidth;
- for(let i=0;i<=4;i++){
-  const y=top+(bottom-top)*i/4;
-  svg.append(svgNode(doc,'line',{x1:left,y1:y,x2:right,y2:y,stroke:'#bac8c1','stroke-width':'1','stroke-opacity':'.6'}));
- }
- for(const m of metrics){
-  const available=minutes.filter(row=>row[m.key]!==null);
-  const values=available.map(row=>row[m.key]),min=Math.min(...values),max=Math.max(...values);
-  const y=value=>top+(bottom-top)*(.85-.7*(value-min)/(max-min||1));
-  let segment=[];
-  const flush=()=>{
-   if(segment.length===1){
-    const row=segment[0];svg.append(svgNode(doc,'circle',{cx:x(row.minute),cy:y(row[m.key]),r:2.5,fill:colors[m.key],'data-metric':m.key}));
-   }else if(segment.length>1){
-    svg.append(svgNode(doc,'polyline',{points:segment.map(row=>x(row.minute).toFixed(2)+','+y(row[m.key]).toFixed(2)).join(' '),
-     fill:'none',stroke:colors[m.key],'stroke-width':2.5,'stroke-linecap':'round','stroke-linejoin':'round','data-metric':m.key}));
-   }
-   segment=[];
-  };
-  for(const row of minutes){
-   if(row[m.key]===null){flush();continue;}
-   if(segment.length&&row.minute-segment.at(-1).minute!==1)flush();
-   segment.push(row);
-  }
-  flush();
-  const legend=create(doc,'p',m.label+' ('+m.unit+'): '+min.toLocaleString('es-ES',{maximumFractionDigits:1})+'–'+max.toLocaleString('es-ES',{maximumFractionDigits:1})+' · '+available.length+' min con datos');
-  legend.className='garmin-fit-chart-note';legend.style.color=colors[m.key];section.append(legend);
- }
- for(const minute of [0,Math.round(maxMinute/2),maxMinute]){
-  const txt=svgNode(doc,'text',{x:x(minute),y:244,'text-anchor':minute===0?'start':minute===maxMinute?'end':'middle','font-size':13,fill:'#345a49'});
-  txt.textContent=minute+' min';svg.append(txt);
- }
- section.insertBefore(svg,section.children[2]||null);
- const label=create(doc,'label','Consultar minuto de actividad');
+ const label=create(doc,'label','Consultar minuto de la actividad');
  const input=create(doc,'input');input.type='number';input.min='0';input.max=String(maxMinute);input.step='1';input.value=String(minutes[0].minute);
  input.setAttribute('aria-label','Consultar promedios medidos en un minuto');input.setAttribute('data-minute-control','');
- label.append(input);
- const readout=create(doc,'p');readout.setAttribute('role','status');readout.setAttribute('data-minute-readout','');
- const byMinute=new Map(minutes.map(row=>[row.minute,row]));
- const write=()=>{
+ label.append(input);section.append(label);
+ const readout=create(doc,'p');readout.setAttribute('role','status');readout.setAttribute('data-minute-readout','');section.append(readout);
+ const tableBox=create(doc,'details'),tableSummary=create(doc,'summary','Ver tabla minuto a minuto');
+ const tableRoot=create(doc,'div');tableRoot.className='perf-scroll';
+ tableBox.append(tableSummary,tableRoot);section.append(tableBox);
+ let page=0;
+ const format=(value,unit)=>value===null?'—':value.toLocaleString('es-ES',{maximumFractionDigits:1})+' '+unit;
+ function write(){
   const minute=Number(input.value);
   if(!Number.isSafeInteger(minute)||minute<0||minute>maxMinute){readout.textContent='Minuto fuera de la actividad.';return;}
   const row=byMinute.get(minute);
   if(!row){readout.textContent='Minuto '+minute+': no hay muestras registradas.';return;}
   const parts=['Minuto '+minute+' ('+row.records+' registros)'];
-  for(const metric of MINUTE_METRICS){
-   const value=row[metric.key];
-   parts.push(metric.label+': '+(value===null?'sin datos':value.toLocaleString('es-ES',{maximumFractionDigits:1})+' '+metric.unit+' ('+row.counts[metric.key]+' muestras)'));
+  const chosen=available.filter(metric=>selected.has(metric.key));
+  for(const metric of chosen){
+   const value=row[metric.key],count=row.counts[metric.key];
+   parts.push(metric.label+': '+(value===null?'sin datos':format(value,metric.unit)+' ('+count+' muestras)'));
   }
+  if(!chosen.length)parts.push('elige al menos una métrica para consultar sus valores.');
   readout.textContent=parts.join(' · ');
- };
+ }
  input.addEventListener('input',write);
+ function table(){
+  if(!tableBox.open)return;
+  tableRoot.replaceChildren();
+  const metrics=available.filter(m=>selected.has(m.key));
+  const table=create(doc,'table'),head=create(doc,'tr'),thead=create(doc,'thead'),body=create(doc,'tbody');
+  for(const title of ['Minuto',...metrics.map(m=>m.label+' ('+m.unit+')')])head.append(create(doc,'th',title));
+  thead.append(head);table.append(thead);
+  const start=page*60,end=Math.min(maxMinute+1,start+60);
+  for(let minute=start;minute<end;minute++){
+   const item=byMinute.get(minute),tr=create(doc,'tr');tr.append(create(doc,'td',String(minute)));
+   for(const metric of metrics)tr.append(create(doc,'td',item?format(item[metric.key],metric.unit):'—'));
+   body.append(tr);
+  }
+  table.append(body);tableRoot.append(table);
+  const pagination=create(doc,'p','Minutos '+start+'–'+(end-1)+' de 0–'+maxMinute+'.');tableRoot.append(pagination);
+  for(const [text,delta] of [['Anterior',-1],['Siguiente',1]]){
+   const button=create(doc,'button',text);button.type='button';button.className='button secondary';
+   button.disabled=page+delta<0||(page+delta)*60>maxMinute;
+   button.addEventListener('click',()=>{page+=delta;table();});
+   tableRoot.append(button);
+  }
+ }
+ tableBox.addEventListener('toggle',table);
+ function draw(){
+  svg.replaceChildren();seriesLegend.replaceChildren();
+  for(let i=0;i<=4;i++){
+   const y=top+(bottom-top)*i/4;
+   svg.append(svgNode(doc,'line',{x1:left,y1:y,x2:right,y2:y,stroke:'#bac8c1','stroke-width':1,'stroke-opacity':'.6'}));
+  }
+  const picked=available.filter(metric=>selected.has(metric.key));
+  if(!picked.length)seriesLegend.append(create(doc,'p','Selecciona al menos un dato para dibujar la curva.'));
+  for(const [index,metric] of picked.entries()){
+   const values=minutes.map(row=>row[metric.key]).filter(v=>v!==null);
+   if(!values.length)continue;
+   const min=Math.min(...values),max=Math.max(...values);
+   const y=value=>top+(bottom-top)*(.85-.7*(value-min)/(max-min||1));
+   const color=colors[available.indexOf(metric)%colors.length],dashes=index>=colors.length?'6 3':null;
+   let segment=[];
+   const flush=()=>{
+    if(segment.length===1){
+     const row=segment[0];svg.append(svgNode(doc,'circle',{cx:x(row.minute),cy:y(row[metric.key]),r:2.5,fill:color,'data-metric':metric.key}));
+    }else if(segment.length>1){
+     const line=svgNode(doc,'polyline',{points:segment.map(row=>x(row.minute).toFixed(2)+','+y(row[metric.key]).toFixed(2)).join(' '),
+      fill:'none',stroke:color,'stroke-width':2.5,'stroke-linecap':'round','stroke-linejoin':'round','data-metric':metric.key});
+     if(dashes)line.setAttribute('stroke-dasharray',dashes);
+     svg.append(line);
+    }
+    segment=[];
+   };
+   for(const row of minutes){
+    if(row[metric.key]===null){flush();continue;}
+    if(segment.length&&row.minute-segment.at(-1).minute!==1)flush();
+    segment.push(row);
+   }
+   flush();
+   const legend=create(doc,'p',metric.label+' ('+metric.unit+'): '+min.toLocaleString('es-ES',{maximumFractionDigits:1})+
+    '–'+max.toLocaleString('es-ES',{maximumFractionDigits:1})+' · '+values.length+' min con datos'+(metric.aggregation==='last'?' · último del minuto':' · media de muestras'));
+   legend.className='garmin-fit-chart-note';legend.style.color=color;seriesLegend.append(legend);
+  }
+  for(const minute of [0,Math.round(maxMinute/2),maxMinute]){
+   const txt=svgNode(doc,'text',{x:x(minute),y:244,'text-anchor':minute===0?'start':minute===maxMinute?'end':'middle','font-size':13,fill:'#345a49'});
+   txt.textContent=minute+' min';svg.append(txt);
+  }
+  write();table();
+ }
  svg.addEventListener('pointerdown',event=>{
   const bounds=svg.getBoundingClientRect();if(!bounds.width)return;
   const px=(event.clientX-bounds.left)/bounds.width*760;
   input.value=String(Math.max(0,Math.min(maxMinute,Math.round((px-left)/axisWidth*maxMinute))));write();
  });
- write();section.append(label,readout);root.append(section);
+ draw();root.append(section);
 }
