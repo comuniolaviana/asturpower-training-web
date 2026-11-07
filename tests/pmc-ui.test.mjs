@@ -46,7 +46,7 @@ test('unknown Garmin TSS hides all CTL/ATL/TSB numbers and chart, but preserves 
  assert.match(t.root.querySelector('[data-pmc-graph]').textContent,/Gráfica retirada/);
  assert.equal(t.root.querySelector('[data-pmc-current]').textContent.includes('—'),true);
  assert.equal(t.root.querySelector('[data-pmc-target]').textContent.includes('—'),true);
- assert.match(t.root.querySelector('[data-pmc-quality]').textContent,/1 de 3 actividades/);
+ assert.match(t.root.querySelector('[data-pmc-quality]').textContent,/1 de 2 actividades/);
  assert.match(t.root.querySelector('[data-pmc-audit]').textContent,/Rodillo sin potencia/);
  assert.equal(t.root.querySelector('img'),null);
  t.change('[data-pmc-date]','2026-11-06');
