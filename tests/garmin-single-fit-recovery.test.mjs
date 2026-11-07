@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {Encoder,Profile} from '@garmin/fitsdk';
 import {zipEntries,unzipEntry} from '../app/src/garmin-original-zip.js';
 import {packageStandaloneFit,inspectRecentFit} from '../app/src/garmin-single-fit-recovery.js';
+import {fitClassification,analyzeFitDecoded} from '../app/src/garmin-fit-analysis.js';
 
 const OWNER='22222222-2222-4222-8222-222222222222';
 const START=new Date('2026-11-06T17:30:20Z');
@@ -52,4 +53,15 @@ test('refuses overwriting a complete activity and rejects non-FIT uploads',async
  await assert.rejects(inspectRecentFit(client,OWNER,bytes),/curvas guardadas/);
  await assert.rejects(inspectRecentFit(dataClient(),OWNER,source(syntheticFit(),'archivo.zip')),/FIT original/);
  assert.equal(client.writes,0);
+});
+
+test('Garmin training/strengthTraining FIT maps to strength without inventing cycling watts',()=>{
+ const decoded={messages:{sessionMesgs:[{sport:'training',subSport:'strengthTraining',
+  startTime:START,totalTimerTime:3751,totalElapsedTime:3751}],recordMesgs:[
+   {timestamp:START,heartRate:104},{timestamp:new Date(+START+1000),heartRate:110}
+  ]}};
+ assert.equal(fitClassification(decoded),null);
+ const analysis=analyzeFitDecoded(decoded);
+ assert.equal(analysis.sport,'strength');assert.equal(analysis.sample_count,2);
+ assert.equal(analysis.normalized_power_watts,null);
 });
