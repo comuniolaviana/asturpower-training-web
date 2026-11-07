@@ -38,7 +38,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   const params=new URL(root.ownerDocument.location.href).searchParams;
   const oauthResult=params.get('garmin');
   let user = null, data = null, view = ['connected','failed','expired','cancelled','not_ready'].includes(oauthResult)?'garmin':params.get('view')==='news'?'news':'overview', epoch = 0, disposed = false, query = '';
-  let actionBusy = false, logoutBusy = false, ignoreSession = false, teamBusy = false, teamPage = 0, preferredRole = null;
+  let actionBusy = false, logoutBusy = false, ignoreSession = false, teamBusy = false, teamPage = 0, preferredRole = null, inviteCode = '';
   let emailNotice = '', emailNoticeUser = null, hubDispose=null, calendarDate=null;
   const cleanupHub=()=>{hubDispose?.();hubDispose=null;};
   const navigateHub=(next,date)=>{calendarDate=date||null;view=next;render();};
@@ -78,7 +78,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   }
 
   function teamContent() {
-    return `<section class="panel team-panel"><div class="panel-heading"><div><span class="eyebrow">PERSONAS, ANTES QUE NÚMEROS</span><h2>Mis deportistas</h2></div><span class="count-pill">${data.athletes.length} activos</span></div><label class="search-label" for="athlete-search">Buscar por nombre</label><input class="search" id="athlete-search" type="search" placeholder="Buscar en mi equipo…" maxlength="100" value="${esc(query)}"><div id="athlete-list">${athleteCards()}</div></section>`;
+    return `<section class="panel team-panel"><div class="panel-heading"><div><span class="eyebrow">PERSONAS, ANTES QUE NÚMEROS</span><h2>Mis deportistas</h2></div><span class="count-pill">${data.athletes.length} activos</span></div><label class="search-label" for="athlete-search">Buscar por nombre</label><input class="search" id="athlete-search" type="search" placeholder="Buscar en mi equipo…" maxlength="100" value="${esc(query)}"><div id="athlete-list">${athleteCards()}</div></section>${view === 'team' ? renderTeamManagement(data, { inviteCode }) : ''}`;
   }
 
   function overview() {
@@ -94,7 +94,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
     const roleLabel = ROLE_LABELS[data.role] || 'Acceso pendiente';
     const name = data.profile?.display_name || 'Tu espacio';
     const currentTitle=({profile:'Mi perfil',team:data.role==='athlete'?'Mis vínculos':'Mis deportistas',calendar:'Calendario',performance:'Rendimiento',garmin:'Garmin Connect',weight:'Mi peso','zones-hr':'Mis zonas de pulso','zones-power':'Mis zonas de potencia',news:'Novedades'})[view]||'Inicio';
-    const managed = renderTeamManagement(data);
+    const managed = renderTeamManagement(data, { inviteCode });
     const roleSwitcher = data.roles.length > 1 ? `<label class="workspace-switcher" for="workspace-role">Tu espacio<select id="workspace-role">${data.roles.map(role => `<option value="${role}" ${data.role === role ? 'selected' : ''}>${ROLE_LABELS[role]}</option>`).join('')}</select></label>` : '';
     const content = !data.profile ? profileForm(true) : view === 'profile' ? profileForm() : !data.role
       ? `<section class="panel pending-panel">${icon('lock')}<span class="eyebrow">PERFIL PREPARADO</span><h2>El siguiente paso es con tu equipo.</h2><p>Tu cuenta está pendiente de asignación de acceso. Contacta con AsturPower para habilitar tu espacio de entrenador o deportista.</p><a class="button primary" href="${contact}">Contactar con el equipo ${icon('arrow')}</a></section>`
@@ -152,6 +152,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
       const auth = await client.auth.getUser();
       if (ticket !== epoch || disposed) return;
       if (auth.error || !auth.data.user) { user = null; login(); return; }
+      if (user?.id && user.id !== auth.data.user.id) inviteCode = '';
       user = auth.data.user;
       const next = await loadDashboard(client, user, preferredRole);
       if (next.profile && next.role) {
@@ -206,11 +207,21 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
     if (target.hasAttribute('data-refresh')) await sync();
     if (target.dataset.teamPage !== undefined) { teamPage = Number(target.dataset.teamPage); await sync(); }
     if (target.hasAttribute('data-close-team')) root.querySelector('#team-confirm').close();
+    if (target.hasAttribute('data-invite-copy')) {
+      if (!inviteCode || data?.role !== 'coach') return;
+      try {
+        await root.ownerDocument.defaultView.navigator.clipboard.writeText(inviteCode);
+        announce('Código copiado. Envíalo de forma privada al deportista.');
+      } catch {
+        root.querySelector('#invite-code')?.select();
+        announce('Selecciona el código y cópialo para compartirlo.');
+      }
+    }
     if (target.dataset.teamAccept || target.dataset.teamRevoke) showTeamConfirmation(target);
     if (target.hasAttribute('data-logout')) {
       if (logoutBusy) return;
       logoutBusy = true; ignoreSession = true;
-      ++epoch; user = null; data = null; view = 'overview'; query = ''; teamPage = 0; preferredRole = null; login();
+      ++epoch; user = null; data = null; view = 'overview'; query = ''; teamPage = 0; preferredRole = null; inviteCode = ''; login();
       root.querySelector('#login-form button').disabled = true;
       try {
         const { error } = await client.auth.signOut({ scope: 'local' });
@@ -245,12 +256,21 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
     const ticket = epoch, button = form.querySelector('button[type="submit"]');
     const fields = new form.ownerDocument.defaultView.FormData(form);
     const body = { ...Object.fromEntries(fields), action: form.dataset.teamForm };
-    if (body.action === 'accept') body.consent = fields.get('consent') === 'on';
+    if (body.action === 'accept' || body.action === 'redeem_invite') body.consent = fields.get('consent') === 'on';
+    if (body.action === 'redeem_invite') body.code = String(fields.get('code') || '').trim();
     teamBusy = true; button.disabled = true;
     try {
-      await teamRequest(client, body, teamPage);
+      const result = await teamRequest(client, body, teamPage);
       if (ticket !== epoch || disposed || ignoreSession) return;
-      await sync(); announce('Cambio guardado.');
+      if (body.action === 'create_invite') {
+        if (!/^[0-9a-f]{32}$/.test(result?.code || '')) throw new Error('No se pudo generar el código de invitación.');
+        inviteCode = result.code;
+        render();
+        announce('Código creado. Compártelo con tu deportista.');
+        return;
+      }
+      await sync();
+      announce(body.action === 'redeem_invite' ? 'Vinculación activada con tu entrenador.' : 'Cambio guardado.');
     } catch (error) {
       if (ticket === epoch && !disposed) {
         const slot = form.querySelector('[data-team-error]') || root.querySelector('#team-message');
@@ -261,7 +281,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
 
   function onWorkspaceChange(event) {
     if ((event.target.id !== 'workspace-role' && !event.target.hasAttribute('data-mobile-role')) || !data?.roles.includes(event.target.value)) return;
-    preferredRole = event.target.value; teamPage = 0; view = 'overview'; query = '';
+    preferredRole = event.target.value; teamPage = 0; view = 'overview'; query = ''; inviteCode = '';
     void sync();
   }
 
