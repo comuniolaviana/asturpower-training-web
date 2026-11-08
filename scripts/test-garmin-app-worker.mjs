@@ -37,6 +37,7 @@ try{
   assert.match(await serviceWorker.text(),/const FILES=\[/);
   const offline=await runtime.dispatchFetch(origin+'/offline.html');assert.equal(offline.status,200);assert.match(await offline.text(),/No hemos podido abrir AsturPower/);
   const recovery=await runtime.dispatchFetch(origin+'/offline-recovery.js');assert.equal(recovery.status,200);assert.match(recovery.headers.get('content-type'),/javascript/);
+  const startup=await runtime.dispatchFetch(origin+'/startup-recovery.js');assert.equal(startup.status,200);assert.match(startup.headers.get('content-type'),/javascript/);
   const script=html.match(/src="(\/assets\/[^" ]+\.js)"/)[1];
   const js=await runtime.dispatchFetch(origin+script);
   assert.equal(js.status,200);

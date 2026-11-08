@@ -34,12 +34,14 @@ export function showUnavailable(root) {
   root.innerHTML = `<main class="unavailable">${brand}<div class="unavailable-card">${icon('lock')}<span class="eyebrow">ÁREA PRIVADA</span><h1>Estamos preparando<br>tu espacio.</h1><p>El acceso de pruebas aún no está disponible. Puedes contactar con el equipo para conocer el siguiente paso.</p><a class="button primary" href="${contact}">Contactar con AsturPower ${icon('arrow')}</a></div><span class="subtle">AsturPower Training · Entrenar con propósito</span></main>`;
 }
 
-export function mountApp(root, client, { fixture = false, teamRequest = requestTeam } = {}) {
+export function mountApp(root, client, { fixture = false, teamRequest = requestTeam, accessTimeoutMs = 15000 } = {}) {
   const params=new URL(root.ownerDocument.location.href).searchParams;
   const oauthResult=params.get('garmin');
   let user = null, data = null, view = ['connected','failed','expired','cancelled','not_ready'].includes(oauthResult)?'garmin':params.get('view')==='news'?'news':'overview', epoch = 0, disposed = false, query = '';
   let actionBusy = false, logoutBusy = false, ignoreSession = false, teamBusy = false, teamPage = 0, preferredRole = null, inviteCode = '';
   let emailNotice = '', emailNoticeUser = null, hubDispose=null, calendarDate=null;
+  let accessFailed = false;
+  const accessTimers = new Set();
   const cleanupHub=()=>{hubDispose?.();hubDispose=null;};
   const navigateHub=(next,date)=>{calendarDate=date||null;view=next;render();};
   const banner = fixture ? '<div class="fixture-banner">VISTA DE PRUEBA · DATOS FICTICIOS</div>' : '';
@@ -143,28 +145,43 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
     return `<button class="nav-item ${view === id ? 'selected' : ''}" data-view="${id}" ${view === id ? 'aria-current="page"' : ''}>${icon(symbol)} ${label}${view === id ? '<span class="nav-dot"></span>' : ''}</button>`;
   }
 
+  function accessError() {
+    accessFailed = true;
+    data = null;
+    root.innerHTML = `${banner}<main class="loading-screen">${brand}<h1>No hemos podido cargar tu espacio.</h1><p>AsturPower está tardando demasiado en responder. Puedes volver a intentarlo o reabrir la aplicación. Tus datos siguen guardados.</p><button class="button primary" data-refresh>Volver a intentar</button><a class="button secondary" href="/?recuperar=${Date.now()}">Reabrir aplicación</a><button class="button secondary" data-logout>Cerrar sesión</button></main>`;
+  }
+
   async function sync() {
     if (ignoreSession || disposed) return;
     const ticket = ++epoch;
+    accessFailed = false;
     data = null;
     loading();
+    let rejectTimeout;
+    const expired = new Promise((_, reject) => { rejectTimeout = reject; });
+    const bounded = operation => Promise.race([operation, expired]);
+    const timeout = setTimeout(() => rejectTimeout(new Error('access_timeout')), accessTimeoutMs);
+    accessTimers.add(timeout);
     try {
-      const auth = await client.auth.getUser();
+      const auth = await bounded(client.auth.getUser());
       if (ticket !== epoch || disposed) return;
       if (auth.error || !auth.data.user) { user = null; login(); return; }
       if (user?.id && user.id !== auth.data.user.id) inviteCode = '';
       user = auth.data.user;
-      const next = await loadDashboard(client, user, preferredRole);
+      const next = await bounded(loadDashboard(client, user, preferredRole));
+      if (ticket !== epoch || disposed) return;
       if (next.profile && next.role) {
-        try { next.team = await teamRequest(client, null, teamPage, fetch, next.role); } catch { next.team = null; }
+        try { next.team = await bounded(teamRequest(client, null, teamPage, fetch, next.role)); } catch { next.team = null; }
       }
       if (ticket !== epoch || disposed) return;
       data = next;
       render();
     } catch {
       if (ticket !== epoch || disposed) return;
-      data = null;
-      root.innerHTML = `${banner}<main class="loading-screen">${brand}<h1>No hemos podido cargar tu espacio.</h1><p>Comprueba la conexión y vuelve a intentarlo.</p><button class="button primary" data-refresh>Volver a intentar</button><button class="button secondary" data-logout>Cerrar sesión</button></main>`;
+      ++epoch; // A late answer must never overwrite retry, sign-out or another account.
+      accessError();
+    } finally {
+      clearTimeout(timeout); accessTimers.delete(timeout);
     }
   }
 
@@ -308,12 +325,14 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
       setTimeout(() => { if (!disposed) void sync(); }, 0);
     }
   });
-  const onVisibility = () => { if (root.ownerDocument.visibilityState === 'visible' && user && !importingHistory() && !['profile','weight','zones-hr','zones-power','news'].includes(view)) void sync(); };
+  const onOnline = () => { if (accessFailed && !disposed && !ignoreSession) void sync(); };
+  root.ownerDocument.defaultView.addEventListener('online', onOnline);
+  const onVisibility = () => { if (root.ownerDocument.visibilityState === 'visible' && (accessFailed || (user && !importingHistory() && !['profile','weight','zones-hr','zones-power','news'].includes(view)))) void sync(); };
   root.ownerDocument.addEventListener('visibilitychange', onVisibility);
   loading();
   // Makes startup independent of whether the SDK already emitted INITIAL_SESSION.
   void sync();
-  return () => { cleanupHub();root.ownerDocument.defaultView.navigator.serviceWorker?.removeEventListener('message',onPushMessage);disposed = true; ++epoch; authListener.subscription.unsubscribe(); root.removeEventListener('click', onClick); root.removeEventListener('submit', onTeamSubmit); root.removeEventListener('change', onWorkspaceChange); root.ownerDocument.removeEventListener('visibilitychange', onVisibility); root.replaceChildren(); };
+  return () => { cleanupHub();for(const timer of accessTimers)clearTimeout(timer);accessTimers.clear();root.ownerDocument.defaultView.removeEventListener('online',onOnline);root.ownerDocument.defaultView.navigator.serviceWorker?.removeEventListener('message',onPushMessage);disposed = true; ++epoch; authListener.subscription.unsubscribe(); root.removeEventListener('click', onClick); root.removeEventListener('submit', onTeamSubmit); root.removeEventListener('change', onWorkspaceChange); root.ownerDocument.removeEventListener('visibilitychange', onVisibility); root.replaceChildren(); };
 }
 
 function initials(name) {
