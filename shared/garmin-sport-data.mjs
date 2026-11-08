@@ -16,8 +16,11 @@ export function buildSportSeries(decoded,{allowSummary=false}={}){
  const source=decoded.messages.recordMesgs||[];
  const hasLaps=(decoded.messages.lapMesgs||[]).some(l=>typeof l.totalTimerTime==='number'&&l.totalTimerTime>0&&Number.isFinite(new Date(l.startTime).getTime()));
  if((!allowSummary&&!source.length&&!hasLaps)||source.length>250000)throw new Error('La actividad requiere revisar el tamaño de sus series. El FIT original se conserva.');
+ // Retain only a boolean presence indicator, NEVER the original GPS coordinates.
+ const hasGpsSamples=source.some(r=>Number.isFinite(r.positionLat)&&Number.isFinite(r.positionLong)&&
+  r.positionLat!==0&&r.positionLong!==0&&r.positionLat!==0x7fffffff&&r.positionLong!==0x7fffffff);
  const records=source.map(sportMessage),fields=[...new Set(records.flatMap(r=>Object.keys(r)))].sort();
- return {version:1,warningCount:decoded.warningCount||0,...(decoded.matchMethod==='tcx_exact_metadata'?{matchMethod:'tcx_exact_metadata'}:{}),fields,rows:records.map(r=>fields.map(k=>r[k]??null)),
+ return {version:1,hasGpsSamples,warningCount:decoded.warningCount||0,...(decoded.matchMethod==='tcx_exact_metadata'?{matchMethod:'tcx_exact_metadata'}:{}),fields,rows:records.map(r=>fields.map(k=>r[k]??null)),
   sessions:(decoded.messages.sessionMesgs||[]).map(sportMessage),laps:(decoded.messages.lapMesgs||[]).map(sportMessage),
   events:(decoded.messages.eventMesgs||[]).map(sportMessage)};
 }
