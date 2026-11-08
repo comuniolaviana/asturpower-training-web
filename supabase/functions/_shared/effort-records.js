@@ -1,11 +1,21 @@
 // Maximum arithmetic means over complete consecutive one-second recordings.
 // No FTP conversion, resampling, interpolation, gap stitching or zero suppression.
-export const RECORD_DURATIONS=Object.freeze([60,300,600,1200,1800,3600]);
-export const RECORD_ALGORITHM=1;
+export const RECORD_DURATIONS=Object.freeze([60,300,600,900,1200,1800,3600]);
+export const RECORD_ALGORITHM=2;
 const millis=v=>typeof v==='number'?v:Date.parse(v);
 const normalize=v=>String(v??'').replace(/[_\s-]/g,'').toLowerCase();
+// Classify only from explicit FIT sport/subsport or the presence of real GPS samples.
+// No GPS does NOT prove indoor; ambiguous historical sessions stay unknown.
+export function classifyEffortEnvironment(data){
+ const session=data?.sessions?.[0]||{},sport=normalize(session.sport),sub=normalize(session.subSport);
+ if(!sport.includes('cycling')&&!sport.includes('biking'))return 'unknown';
+ if(['indoorcycling','virtualcycling','virtualride','spinning','stationarycycling','spin'].includes(sub))return 'indoor';
+ if(['road','roadcycling','mountain','mountainbiking','gravel','cyclocross','commuting','bmx','downhill'].includes(sub))return 'outdoor';
+ return data.hasGpsSamples===true?'outdoor':'unknown';
+}
 export function calculateEffortBests(data){
  if(data?.version!==1||!Array.isArray(data.fields)||!Array.isArray(data.rows)||data.rows.length>250000||data.fields.length>1000)throw Error('invalid_series');
+ const environment=classifyEffortEnvironment(data);
  const ti=data.fields.indexOf('timestamp'),pi=data.fields.indexOf('power'),hi=data.fields.indexOf('heartRate');
  const times=data.rows.map(row=>millis(row?.[ti]));
  const events=(data.events||[]).filter(e=>normalize(e.event)==='timer'&&Number.isFinite(millis(e.timestamp))).map(e=>({at:millis(e.timestamp),type:normalize(e.eventType)})).sort((a,b)=>a.at-b.at);
@@ -38,5 +48,5 @@ export function calculateEffortBests(data){
    s.ring[index]=value;s.count++;s.seconds++;
   }
  }
- return {algorithm_version:RECORD_ALGORITHM,record_count:data.rows.length,power_seconds:states[0].seconds,heart_rate_seconds:states[1].seconds,bests:states.flatMap(s=>s.best.filter(Boolean))};
+ return {algorithm_version:RECORD_ALGORITHM,environment,record_count:data.rows.length,power_seconds:states[0].seconds,heart_rate_seconds:states[1].seconds,bests:states.flatMap(s=>s.best.filter(Boolean))};
 }
