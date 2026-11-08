@@ -37,7 +37,7 @@ async function processBatch(db:any,owner:string){
   for(let i=0;i<claim.items.length;i++){
    if(Date.now()-started>70000)break;
    const item=claim.items[i],bytes=await downloads.get(i);downloads.delete(i);prefetch(i+3);
-   let values:any={algorithm_version:1,bests:[],record_count:0,power_seconds:0,heart_rate_seconds:0,status:'error'};
+   let values:any={algorithm_version:2,environment:'unknown',bests:[],record_count:0,power_seconds:0,heart_rate_seconds:0,status:'error'};
    try{
     if(!bytes)throw Error();
     const raw=await bounded(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')));
