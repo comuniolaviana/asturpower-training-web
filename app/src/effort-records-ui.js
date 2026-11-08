@@ -45,8 +45,8 @@ export function mountEffortRecords({root,client,user,kind}){
   const withSeries=Number(data.with_series)||0,analysed=Number(data.analysed)||0;
   const current=Number(data.current_analysed??data.analysed)||0,failed=Number(data.failed)||0;
   const pending=Math.max(0,withSeries-current);
-  status.textContent=pending?`Récords revisados con la clasificación actual: ${current} de ${withSeries} actividades. La lista puede cambiar mientras se revisa el historial.`:`${analysed} actividades con series revisadas.`;
-  if(Number(data.total_activities)>withSeries)status.textContent+=` ${data.total_activities-withSeries} actividades todavía no tienen series detalladas.`;
+  status.textContent=pending?`Récords revisados con la clasificación actual: ${current} de ${withSeries} actividades. La lista puede cambiar mientras se revisa el historial.`:`${analysed} ${analysed===1?'actividad':'actividades'} con series revisadas.`;
+  if(Number(data.total_activities)>withSeries){const missing=Number(data.total_activities)-withSeries;status.textContent+=` ${missing} ${missing===1?'actividad':'actividades'} aún no tienen series detalladas.`;}
   if(Number(data.without_samples))status.textContent+=` ${data.without_samples} carecen de muestras por segundo.`;
   if(failed)status.textContent+=` ${failed} requieren reintentar la lectura.`;
   root.querySelector('[data-effort-retry]').hidden=!failed;
