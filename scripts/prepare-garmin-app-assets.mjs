@@ -6,13 +6,13 @@ await rm(target,{recursive:true,force:true});
 await mkdir(target,{recursive:true});
 await cp(new URL('../dist-app/index.html',import.meta.url),new URL('index.html',target));
 await cp(new URL('../dist-app/assets/',import.meta.url),new URL('assets/',target),{recursive:true});
-for(const name of ['privacidad-garmin.html','garmin-privacy.css']){
+for(const name of ['privacidad-garmin.html','garmin-privacy.css','privacidad.html','privacy.css']){
   await cp(new URL('../dist-app/'+name,import.meta.url),new URL(name,target));
 }
-for(const name of ['manifest.webmanifest','offline.html','offline.css','icons','push-sw.js']){
+for(const name of ['manifest.webmanifest','offline.html','offline.css','offline-recovery.js','icons','push-sw.js']){
   await cp(new URL('../dist-app/'+name,import.meta.url),new URL(name,target),{recursive:true});
 }
-const files=['/offline.html','/offline.css','/manifest.webmanifest'];
+const files=['/index.html','/offline.html','/offline.css','/offline-recovery.js','/manifest.webmanifest'];
 for(const directory of ['assets','icons'])for(const name of (await readdir(new URL(directory+'/',target))).sort())files.push('/'+directory+'/'+name);
 const hash=createHash('sha256');
 for(const path of files){hash.update(path);hash.update(await readFile(new URL('.'+path,target)));}

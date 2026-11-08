@@ -13,9 +13,15 @@ self.addEventListener('fetch',event=>{
  const request=event.request,url=new URL(request.url);
  if(request.method!=='GET'||url.origin!==self.location.origin)return;
  // OAuth callbacks and APIs must retain their native network/error semantics.
- if(url.pathname.startsWith('/.netlify/')||url.pathname.startsWith('/garmin/')||url.pathname==='/health')return;
+ if(url.pathname.startsWith('/.netlify/')||url.pathname.startsWith('/api/')||url.pathname.startsWith('/garmin/')||url.pathname==='/health'||request.headers.has('authorization'))return;
  if(request.mode==='navigate'){
-  event.respondWith(fetch(request).catch(()=>caches.open(CACHE).then(c=>c.match('/offline.html'))));return;
+  // The app shell is public static HTML. Never cache a user, session or API response.
+  // One failed navigation must not strand an installed app on the offline page.
+  event.respondWith((async()=>{
+   try{const response=await fetch(request);if(response.status<500)return response;}catch{}
+   const cache=await caches.open(CACHE);
+   return await cache.match('/index.html')||await cache.match('/offline.html');
+  })());return;
  }
  if(!paths.has(url.pathname)||url.search||request.headers.has('authorization'))return;
  event.respondWith(caches.open(CACHE).then(async cache=>{

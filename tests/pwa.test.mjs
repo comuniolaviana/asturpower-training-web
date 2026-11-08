@@ -23,22 +23,30 @@ test('already installed app has no installation banner; unavailable prompts give
  assert.match(dom.window.document.querySelector('.app-install p').textContent,/Instalar/);
  dom.window.dispatchEvent(new dom.window.Event('appinstalled'));assert.equal(dom.window.document.querySelector('.app-install'),null);dom.window.close();
 });
-async function worker(){
+async function worker({shell=false}={}){
  const listeners={},stored=new Map(),requests=[],deleted=[];
- const cache={async addAll(paths){for(const path of paths)stored.set(path,new Response(path));},async match(path){return stored.get(path);},async put(path,response){stored.set(path,response);}};
- const source=(await readFile(new URL('../scripts/pwa-worker-template.js',import.meta.url),'utf8')).replace('__BUILD_ID__','fixture').replace('__STATIC_FILES__',JSON.stringify(['/offline.html','/assets/app-hash.js']));
+ const cache={async addAll(paths){for(const path of paths)stored.set(path,new Response(path));},async match(path){return stored.get(path)?.clone();},async put(path,response){stored.set(path,response);}};
+ const source=(await readFile(new URL('../scripts/pwa-worker-template.js',import.meta.url),'utf8')).replace('__BUILD_ID__','fixture').replace('__STATIC_FILES__',JSON.stringify([...shell?['/index.html']:[], '/offline.html','/assets/app-hash.js']));
  const context={self:{location:{origin:'https://app.example'},addEventListener(type,fn){listeners[type]=fn;}},caches:{async open(){return cache;},async keys(){return ['asturpower-static-old','unrelated'];},async delete(key){deleted.push(key);}},URL,fetch:async request=>{requests.push(request);throw new Error('offline');}};
  vm.runInNewContext(source,context);
  let installation;listeners.install({waitUntil(p){installation=p;}});await installation;
- return {listeners,stored,requests,deleted};
+ return {listeners,stored,requests,deleted,setNetwork(fn){context.fetch=fn;}};
 }
 test('worker bypasses API, OAuth, external services, authenticated requests and writes',async()=>{
  const w=await worker();
- for(const [path,method,mode,headers] of [['/.netlify/functions/garmin-callback?code=x','GET','navigate',{}],['/garmin/activities','GET','navigate',{}],['/health','GET','cors',{}],['https://db.example/file','GET','cors',{}],['/assets/app-hash.js','POST','cors',{}],['/assets/app-hash.js','GET','cors',{authorization:'Bearer private'}],['/assets/app-hash.js?v=private','GET','cors',{}],['/unknown.json','GET','cors',{}]]){
+ for(const [path,method,mode,headers] of [['/.netlify/functions/garmin-callback?code=x','GET','navigate',{}],['/api/garmin-callback?code=x','GET','navigate',{}],['/private','GET','navigate',{authorization:'Bearer private'}],['/garmin/activities','GET','navigate',{}],['/health','GET','cors',{}],['https://db.example/file','GET','cors',{}],['/assets/app-hash.js','POST','cors',{}],['/assets/app-hash.js','GET','cors',{authorization:'Bearer private'}],['/assets/app-hash.js?v=private','GET','cors',{}],['/unknown.json','GET','cors',{}]]){
   const request={url:new URL(path,'https://app.example').href,method,mode,headers:new Headers(headers)};
   w.listeners.fetch({request,respondWith(){assert.fail('private or non-static request intercepted');}});
  }
  assert.equal(w.requests.length,0);
+});
+test('a temporary navigation failure opens the public app shell, then returns to the network when restored',async()=>{
+ const w=await worker({shell:true});let response;
+ const nav=()=>w.listeners.fetch({request:{url:'https://app.example/calendar',method:'GET',mode:'navigate',headers:new Headers()},respondWith(p){response=p;}});
+ nav();assert.equal(await (await response).text(),'/index.html');
+ w.setNetwork(async()=>new Response('upstream failure',{status:503}));nav();assert.equal(await (await response).text(),'/index.html');
+ w.setNetwork(async()=>new Response('access denied',{status:403}));nav();assert.equal((await response).status,403);
+ w.setNetwork(async()=>new Response('fresh page'));nav();assert.equal(await (await response).text(),'fresh page');
 });
 test('offline navigation is explicit and public static files work offline; updates do not force reload',async()=>{
  const w=await worker();let response;

@@ -1,6 +1,8 @@
 # Usar explícitamente solo en un despliegue de pruebas de desarrollo.
 # No sustituye la configuración ni la publicación de la landing en main.
 [build]
+  # Retired hosting: stop automatic builds before installation or compilation.
+  ignore = "exit 0"
   command = "npm ci && npm run build"
   publish = "dist-app"
   functions = "netlify/functions"
