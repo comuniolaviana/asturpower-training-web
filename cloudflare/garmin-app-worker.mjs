@@ -51,7 +51,7 @@ export function createAppWorker(dependencies={}){
         }
         if(url.pathname==='/garmin/activities'){
           if(env.SUPABASE_URL!==SUPABASE_URL)return protect(json({error:'app_not_configured'},503));
-          return protect(await receiver.fetch(request,env));
+          return protect(await receiver.fetch(request,env,context));
         }
         if(url.pathname.startsWith('/.netlify/functions/')){
           if(env.SUPABASE_URL!==SUPABASE_URL)return protect(json({error:'app_not_configured'},503));

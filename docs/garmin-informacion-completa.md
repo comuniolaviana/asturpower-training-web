@@ -40,3 +40,7 @@ Fuentes oficiales:
 - https://supabase.com/docs/guides/storage/security/access-control
 - https://supabase.com/docs/guides/storage/uploads/file-limits
 - https://supabase.com/docs/guides/platform/manage-your-usage/storage-size
+
+
+## Actualización del 8 de noviembre
+La preparación descrita arriba se ha conectado al receptor y al análisis automático en servidor. Véase `garmin-archivos-automaticos.md` para el estado de activación externa y validación real; no deben confundirse las pruebas con una entrega real ya completada.

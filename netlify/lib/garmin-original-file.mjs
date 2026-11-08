@@ -1,4 +1,4 @@
-// Preparation only: NOT wired into the active receiver or cron.
+// Used by the encrypted inbox after a durable single-attempt reservation.
 // Activity API 2.1 §6.4: callback token is single-use, expires after 24 hours,
 // and is NOT the person's OAuth access token. A durable one-attempt ledger and
 // storage reservation must exist BEFORE any production download is enabled.

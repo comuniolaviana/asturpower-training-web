@@ -2,10 +2,11 @@ import { encryptedSecret, decryptedSecret } from './garmin-oauth-service.mjs';
 import { withGarminLease } from './garmin-training-service.mjs';
 import { createGarminRepository } from './garmin-repository.mjs';
 import { GarminError, demand, boundedJson, digest, isGarminIp, json, failure } from './garmin-protocol.mjs';
+import {validateOriginalCallback} from './garmin-original-file.mjs';
 
 const SUMMARY_FIELDS=['summaryId','activityId','activityType','activityName','startTimeInSeconds',
   'durationInSeconds','distanceInMeters','totalElevationGainInMeters','averageHeartRateInBeatsPerMinute'];
-const TYPES=['deregistrations','userPermissionsChange','activities','manuallyUpdatedActivities','activityDetails'];
+const TYPES=['deregistrations','userPermissionsChange','activities','manuallyUpdatedActivities','activityDetails','activityFiles'];
 const validProviderId=value=>typeof value==='string'&&/^[-a-zA-Z0-9_]{4,128}$/.test(value);
 
 export function minimizeGarminNotification(body){
@@ -18,6 +19,15 @@ export function minimizeGarminNotification(body){
     for(const item of body[type]){
       demand(item&&typeof item==='object'&&validProviderId(item.userId),'invalid_notification');
       if(type==='deregistrations'){events.push({type,userId:item.userId});continue;}
+      if(type==='activityFiles'){
+        const callback=validateOriginalCallback(item.callbackURL);
+        demand(['FIT','TCX','GPX'].includes(item.fileType),'invalid_activity_file',422);
+        demand((Number.isSafeInteger(item.activityId)&&item.activityId>0)||(typeof item.activityId==='string'&&/^[0-9]{1,20}$/.test(item.activityId)),'invalid_activity_id',422);
+        demand(Number.isSafeInteger(item.startTimeInSeconds)&&item.startTimeInSeconds>=0,'invalid_activity_file',422);
+        events.push({type,userId:item.userId,callbackURL:callback.toString(),fileType:item.fileType,
+          summary:{activityId:String(item.activityId),startTimeInSeconds:item.startTimeInSeconds,activityName:String(item.activityName||'Actividad Garmin').slice(0,160),activityType:String(item.activityType||'OTHER').slice(0,80)}});
+        continue;
+      }
       if(type==='userPermissionsChange'){
         demand(Array.isArray(item.permissions)&&item.permissions.length<=30
           &&item.permissions.every(p=>typeof p==='string'&&/^[A-Z_]{2,60}$/.test(p))
@@ -39,7 +49,7 @@ export function minimizeGarminNotification(body){
     }
   }
   demand(events.length>0&&events.length<=500,'invalid_notification');
-  // No samples, GPS, callbackURL, user-supplied athlete IDs or access tokens persist.
+  // File callbacks survive only inside the encrypted inbox; never log or expose them.
   return events;
 }
 function optionalNumber(value,min,max,integer=false){
@@ -102,6 +112,7 @@ export async function processGarminEvents(events,receivedAt,repo,{start=0,deadli
         await repo.permissions(event.userId,event.permissions,event.changeTimeInSeconds);return;
       }
       if(!connection.permissions?.includes('ACTIVITY_EXPORT'))return;
+      if(event.type==='activityFiles'){await repo.importFile(event,connection,receivedAt);return;}
       await repo.importActivity(toActivityRecord(event,connection.athlete_id),receivedAt);
     });
     await onProgress(cursor+1);
@@ -110,7 +121,7 @@ export async function processGarminEvents(events,receivedAt,repo,{start=0,deadli
 }
 export async function processGarminInbox({env=process.env,repositoryFactory=createGarminRepository}={}){
   if(env.ASTURPOWER_GARMIN_ACTIVITY_ENABLED!=='true')return {enabled:false,processed:0,failed:0};
-  const repo=repositoryFactory(env),deadline=Date.now()+18000;
+  const repo=repositoryFactory(env),deadline=Date.now()+45000;
   repo.deadline?.(deadline+2000);
   const records=await repo.claimInbox();
   let processed=0,failed=0;
@@ -125,5 +136,6 @@ export async function processGarminInbox({env=process.env,repositoryFactory=crea
       await repo.failInbox(record,error instanceof GarminError?error.code:'processing_failed');failed++;
     }
   }
+  await repo.resumeFiles?.();
   return {enabled:true,processed,failed};
 }

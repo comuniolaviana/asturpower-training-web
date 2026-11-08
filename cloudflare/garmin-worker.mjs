@@ -2,7 +2,7 @@
 import { createGarminWebhookHandler, processGarminInbox } from '../netlify/lib/garmin-activity-service.mjs';
 export function createWorker(dependencies={}){
   return {
-    async fetch(request,env){
+    async fetch(request,env,context){
       const url=new URL(request.url);
       if(url.pathname==='/health'&&request.method==='GET')return Response.json({
         service:'asturpower-garmin-receiver',enabled:env.ASTURPOWER_GARMIN_ACTIVITY_ENABLED==='true',
@@ -10,7 +10,9 @@ export function createWorker(dependencies={}){
       if(url.pathname!=='/garmin/activities')return new Response('Not found',{status:404});
       // Cloudflare sets this header at ingress. Do not put this adapter behind an
       // untrusted reverse proxy or use it as a generic Node HTTP handler.
-      return createGarminWebhookHandler({env,...dependencies})(request,{ip:request.headers.get('CF-Connecting-IP')});
+      const response=await createGarminWebhookHandler({env,...dependencies})(request,{ip:request.headers.get('CF-Connecting-IP')});
+      if(response.status===200&&context?.waitUntil)context.waitUntil(processGarminInbox({env,...dependencies}));
+      return response;
     },
     async scheduled(event,env,context){context.waitUntil(processGarminInbox({env,...dependencies}));},
   };

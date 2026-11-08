@@ -202,7 +202,7 @@ test('zero distance is preserved and missing metrics do not become invented valu
   assert.equal(record.started_at,new Date(1793692800*1000).toISOString());
 });
 test('oversized and unsupported webhook bodies are rejected without storing data',async()=>{
-  const f=garminFixture();assert.equal((await receiver(f)(incoming({activityFiles:[{callbackURL:'http://127.0.0.1'}]}),{ip:'204.77.162.9'})).status,422);
+  const f=garminFixture();assert.equal((await receiver(f)(incoming({moveIQActivities:[{callbackURL:'http://127.0.0.1'}]}),{ip:'204.77.162.9'})).status,422);
   assert.equal((await receiver(f)(incoming({activities:[{userId:'bad'}]}),{ip:'204.77.162.9'})).status,400);
   assert.equal((await receiver(f)(incoming({activities:[],extra:'x'.repeat(1048576)}),{ip:'204.77.162.9'})).status,413);
   assert.equal(f.inbox.size,0);
