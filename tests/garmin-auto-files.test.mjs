@@ -27,7 +27,7 @@ test('file notification retains only a validated callback inside encrypted durab
 test('file download is reserved before the sole provider GET; uncertain outcomes and duplicate notifications never repeat it',async()=>{
  const order=[],f=garminFixture();let once=true;
  const db={rpc:async name=>{order.push(name);if(name==='start_garmin_api_file'){const download=once;once=false;return {data:{id:'job',download}};}return {data:null};},from:()=>({update:()=>({eq:()=>({eq:async()=>({error:null})})})})};
- const run=()=>receiveGarminFile({db,event:minimizeGarminNotification(notification())[0],connection:{athlete_id:IDs.athlete},receivedAt:new Date().toISOString(),fetcher:async()=>{order.push('GET');throw Error('must not leak token');}});
+ const run=()=>receiveGarminFile({db,event:minimizeGarminNotification(notification())[0],connection:{athlete_id:IDs.athlete},receivedAt:new Date().toISOString(),accessToken:'synthetic-oauth-bearer-token-not-real',fetcher:async(_url,options)=>{assert.equal(options.headers.Authorization,'Bearer synthetic-oauth-bearer-token-not-real');order.push('GET');throw Error('must not leak token');}});
  assert.equal((await run()).status,'uncertain');await run();assert.deepEqual(order,['start_garmin_api_file','GET','start_garmin_api_file']);
 });
 test('official FIT parsing preserves every sport record and lap, excludes GPS from shared curves, validates the exact event date',()=>{
