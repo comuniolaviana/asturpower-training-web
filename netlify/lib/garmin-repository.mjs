@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { resolvePublicConfig } from '../functions/public-config.mjs';
-import { GarminError, demand } from './garmin-protocol.mjs';
+import { GarminError, demand, createGarminTransport } from './garmin-protocol.mjs';
 import {receiveGarminFile} from './garmin-file-receiver.mjs';
+import {usableAccessToken} from './garmin-training-service.mjs';
 
 const checked=result=>{if(result.error)throw new GarminError('storage_unavailable');return result.data;};
 export function createGarminRepository(env,clientFactory=createClient){
@@ -17,7 +18,13 @@ export function createGarminRepository(env,clientFactory=createClient){
   const connections=()=>db.from('garmin_connections');
   return {
     deadline(value){deadline=value;},
-    async importFile(event,connection,receivedAt){return receiveGarminFile({db,event,connection,receivedAt});},
+    async importFile(event,connection,receivedAt){
+      // Resolve/refresh the authorized athlete's OAuth2 token BEFORE a callback
+      // can be reserved or consumed. The caller already holds the athlete lease.
+      const call=createGarminTransport({reserve:(id,oauth)=>this.reserve(id,oauth)});
+      const accessToken=await usableAccessToken(connection,env,this,call);
+      return receiveGarminFile({db,event,connection,receivedAt,accessToken});
+    },
     async resumeFiles(){checked(await db.rpc('resume_garmin_api_files'));},
     async lease(key,owner){return checked(await db.rpc('claim_garmin_lock',{p_key:key,p_owner:owner,p_ttl_seconds:120}))===true;},
     async release(key,owner){checked(await db.rpc('release_garmin_lock',{p_key:key,p_owner:owner}));},
