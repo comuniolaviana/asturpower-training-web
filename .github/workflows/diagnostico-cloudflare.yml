@@ -1,0 +1,67 @@
+name: Diagnóstico externo Cloudflare (solo lectura)
+on:
+  push:
+    branches:
+      - fix/pwa-recuperacion-segura-20261108
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostico:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Comprobar servidor público sin credenciales
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import dns from 'node:dns/promises';
+          const host='asturpower-garmin-dev.asturpower-training.workers.dev';
+          const origin='https://'+host;
+          try {
+            const addresses=await dns.lookup(host,{all:true});
+            console.log('DNS: OK (direcciones='+addresses.length+')');
+          }catch(e){
+            console.log('DNS: FALLO ('+String(e.code||e.name)+')');
+          }
+          for(const path of ['/health','/','/offline.html','/sw.js','/.netlify/functions/public-config']){
+            const label=path;
+            try{
+              const response=await fetch(origin+path,{
+                signal:AbortSignal.timeout(12000),
+                redirect:'manual',
+                cache:'no-store',
+                headers:{'User-Agent':'AsturPower-Diagnostic/1.0'}
+              });
+              const ct=response.headers.get('content-type')||'sin tipo';
+              let body='';
+              if(path!=='/.netlify/functions/public-config') body=(await response.text()).slice(0,50000);
+              let details='';
+              if(path==='/health'){
+                try{
+                  const info=JSON.parse(body);
+                  details=' service='+String(info.service||'desconocido')+
+                    ' diagnostico='+String(info.diagnostic_version||'no indicado');
+                }catch{details=' cuerpo no JSON';}
+              }
+              if(path==='/'){
+                details=body.includes('data-boot-placeholder')?' HTML SPA con recuperación':
+                  body.includes('Ahora no hay conexión')?' HTML offline antiguo':
+                  body.includes('No hemos podido abrir AsturPower')?' HTML de recuperación':
+                  ' HTML diferente';
+              }
+              if(path==='/offline.html'){
+                details=body.includes('Ahora no hay conexión')?' VERSIÓN ANTIGUA':
+                  body.includes('Comprobar y reparar acceso')?' VERSIÓN PROPUESTA':
+                  body.includes('No hemos podido abrir AsturPower')?' VERSIÓN NUEVA SIN BOTÓN':' SIN IDENTIFICAR';
+              }
+              if(path==='/sw.js'){
+                const match=body.match(/const CACHE='(asturpower-static-[^']+)'/);
+                details=match?' PWA cache='+match[1]:' sin identificador PWA';
+              }
+              console.log(label+': HTTP '+response.status+' '+ct+details);
+            }catch(e){
+              console.log(label+': ERROR '+String(e.cause?.code||e.code||e.name)+' '+String(e.cause?.message||e.message).slice(0,180));
+            }
+          }
+          NODE
