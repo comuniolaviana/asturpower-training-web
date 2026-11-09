@@ -3,6 +3,34 @@ import {analyzeFitDecoded,derivedFitRow} from '../../../app/src/garmin-fit-analy
 import {buildSportSeries} from '../../../shared/garmin-sport-data.mjs';
 import {sha256,originalIdentity,originalChunkPath} from '../../../app/src/garmin-original-vault.js';
 const checked=r=>{if(r.error)throw Error('storage_unavailable');return r.data;};
+// Validate the provider's immutable activity identity before creating or joining
+// a calendar row. A similar timestamp alone is never a sufficient match.
+function summarySport(type){
+ const text=String(type||'').toUpperCase();
+ if(/CYCLING|BIKING/.test(text))return 'cycling';
+ if(/RUNNING/.test(text))return 'running';
+ if(/SWIMMING/.test(text))return 'swimming';
+ if(/WALKING|HIKING/.test(text))return 'walking';
+ if(/STRENGTH/.test(text))return 'strength';
+ return null;
+}
+export function assertGarminApiFileIdentity(fit,job,activity=null){
+ const started=Date.parse(fit?.started_at||'');
+ const notifiedStart=job?.summary?.startTimeInSeconds;
+ if(!Number.isFinite(started)||!Number.isSafeInteger(notifiedStart)||notifiedStart<0||
+    Math.abs(started-notifiedStart*1000)>300000||
+    !job?.external_id||String(job?.summary?.activityId)!==String(job.external_id))
+   throw Error('file_activity_mismatch');
+ const expected=summarySport(job.summary?.activityType);
+ if(expected&&fit.sport!==expected)throw Error('file_activity_mismatch');
+ if(activity){
+   const existingStart=Date.parse(activity.started_at||'');
+   if(!Number.isFinite(existingStart)||Math.abs(existingStart-started)>300000||
+      (activity.sport&&activity.sport!=='other'&&activity.sport!==fit.sport))
+     throw Error('file_activity_mismatch');
+ }
+ return true;
+}
 export function decodeApiFit(bytes,job){
  if(job.source_format!=='FIT')throw Error('source_format_requires_review');
  const decoded=decodeCompleteFit(bytes),session=decoded.messages.sessionMesgs?.[0];
@@ -10,6 +38,7 @@ export function decodeApiFit(bytes,job){
  const start=session.startTime instanceof Date?session.startTime.getTime():Date.parse(session.startTime),duration=Number(session.totalTimerTime);
  if(!Number.isFinite(start)||!Number.isFinite(duration)||duration<1||duration>172800||Math.abs(start/1000-Number(job.summary.startTimeInSeconds))>300)throw Error('file_activity_mismatch');
  const fit=analyzeFitDecoded(decoded)||{started_at:new Date(start).toISOString(),sport:'other',timer_seconds:duration,sample_count:decoded.messages.recordMesgs?.length||0,power_seconds:0,power_coverage:0,normalized_power_watts:null};
+ assertGarminApiFileIdentity(fit,job);
  return {decoded,fit,series:buildSportSeries(decoded,{allowSummary:true})};
 }
 export async function processApiFile(db,job){
@@ -36,7 +65,7 @@ export async function processApiFile(db,job){
   checked(await db.rpc('upsert_garmin_activity',{p_activity:record,p_received_at:job.received_at}));
   activity=checked(await db.from('activities').select('id,started_at,sport').eq('athlete_id',owner).eq('source','garmin_api').eq('external_id',job.external_id).single());
  }
- if(Math.abs(Date.parse(activity.started_at)-Date.parse(fit.started_at))>300000)throw Error('file_activity_mismatch');
+ assertGarminApiFileIdentity(fit,job,activity);
  const physiology=checked(await db.from('athlete_physiology').select('id,sport,effective_date,ftp,created_at').eq('athlete_id',owner).eq('sport','cycling').order('effective_date',{ascending:false}).limit(500))||[];
  const row=derivedFitRow(fit,{activity,offset_seconds:Math.round(Math.abs(Date.parse(activity.started_at)-Date.parse(fit.started_at))/1000),method:'garmin_api_activity_id'},physiology,{athleteId:owner,archiveId:job.archive_id,packName:'garmin-api',fileName:job.external_id+'.fit'});
  if(!row)throw Error('analysis_requires_review');

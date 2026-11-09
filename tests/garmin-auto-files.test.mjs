@@ -31,7 +31,7 @@ test('file download is reserved before the sole provider GET; uncertain outcomes
  assert.equal((await run()).status,'uncertain');await run();assert.deepEqual(order,['start_garmin_api_file','GET','start_garmin_api_file']);
 });
 test('official FIT parsing preserves every sport record and lap, excludes GPS from shared curves, validates the exact event date',()=>{
- const job={source_format:'FIT',summary:{startTimeInSeconds:+start/1000}},parsed=decodeApiFit(fit(),job);
+ const job={source_format:'FIT',external_id:String(event.activityId),summary:{activityId:String(event.activityId),activityType:event.activityType,startTimeInSeconds:+start/1000}},parsed=decodeApiFit(fit(),job);
  assert.equal(parsed.series.rows.length,120);assert.equal(parsed.series.laps.length,1);assert.equal(parsed.fit.device_tss,3);
  assert.ok(parsed.series.fields.includes('heartRate'));assert.ok(parsed.series.fields.includes('power'));assert.doesNotMatch(JSON.stringify(parsed.series),/positionLat|positionLong/);
  assert.throws(()=>decodeApiFit(fit(),{...job,summary:{startTimeInSeconds:0}}),/mismatch/);
@@ -45,7 +45,7 @@ test('automatic file processing joins by official activity ID, writes full curve
    if(payload){saved.push({table,op,payload});tables[table]=[payload];return resolve({data:null});}
    return resolve({data:['garmin_connections','garmin_original_archives','activities','garmin_fit_analysis','garmin_activity_series'].includes(table)?tables[table][0]||null:tables[table]});
   }};return q;},storage:{from:bucket=>({download:async path=>({data:bucket==='garmin-originals'?new Blob([bytes]):new Blob([storage.get(path)])}),upload:async(path,raw)=>{storage.set(path,raw);return {error:null};}})}};
- const job={id:'job',athlete_id:IDs.athlete,external_id:'12345',garmin_user_id:event.userId,received_at:new Date().toISOString(),archive_id:archiveId,source_format:'FIT',summary:{startTimeInSeconds:+start/1000},lease_token:'lease'};
+ const job={id:'job',athlete_id:IDs.athlete,external_id:'12345',garmin_user_id:event.userId,received_at:new Date().toISOString(),archive_id:archiveId,source_format:'FIT',summary:{activityId:'12345',activityType:'INDOOR_CYCLING',startTimeInSeconds:+start/1000},lease_token:'lease'};
  const result=await processApiFile(db,job);assert.equal(result.records,120);assert.equal(result.laps,1);
  assert.equal(saved.find(s=>s.table==='garmin_fit_analysis').payload.device_tss,3);
  assert.equal(saved.find(s=>s.table==='garmin_fit_analysis').payload.measurement_source,'garmin_api_activity_id');
