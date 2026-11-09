@@ -2,12 +2,15 @@ import {fetchGarminOriginalOnce,GarminFileError} from './garmin-original-file.mj
 import {digest,GarminError} from './garmin-protocol.mjs';
 import {sha256,originalIdentity,originalChunkPath,ORIGINAL_CHUNK_BYTES} from '../../app/src/garmin-original-vault.js';
 const checked=r=>{if(r.error)throw new GarminError('file_storage_unavailable');return r.data;};
-export async function receiveGarminFile({db,event,connection,receivedAt,fetcher=fetch}){
+export async function receiveGarminFile({db,event,connection,receivedAt,accessToken,fetcher=fetch}){
+ // Reject a missing connection token before reserving the one-use Garmin callback.
+ if(typeof accessToken!=='string'||accessToken.length<10||accessToken.length>20000||/\s|[\x00-\x1f\x7f]/.test(accessToken))
+  throw new GarminError('garmin_file_access_token_required',503);
  const owner=connection.athlete_id;
  const job=checked(await db.rpc('start_garmin_api_file',{p_owner:owner,p_user_id:event.userId,p_external_id:String(event.summary.activityId),p_callback_sha:digest(event.callbackURL),p_format:event.fileType,p_received_at:receivedAt,p_summary:event.summary}));
  if(!job?.download)return {status:job?.status||'skipped'};
  let bytes;
- try{bytes=await fetchGarminOriginalOnce(event.callbackURL,{fetcher});}
+ try{bytes=await fetchGarminOriginalOnce(event.callbackURL,{fetcher,accessToken});}
  catch(error){
   const code=error instanceof GarminFileError?error.code:'garmin_file_download_outcome_uncertain';
   checked(await db.from('garmin_api_files').update({status:'uncertain',last_error:code,reserved_bytes:0}).eq('id',job.id).eq('status','downloading'));

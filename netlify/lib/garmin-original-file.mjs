@@ -15,17 +15,29 @@ export function validateOriginalCallback(value){
   return u;
  }catch{throw new GarminFileError('garmin_file_invalid_callback');}
 }
-export async function fetchGarminOriginalOnce(callback,{fetcher=fetch,signal,maxBytes=50*1024*1024}={}){
+export async function fetchGarminOriginalOnce(callback,{fetcher=fetch,signal,maxBytes=50*1024*1024,accessToken}={}){
  const u=validateOriginalCallback(callback);
+ // Garmin Developer Program Activity API uses the athlete's OAuth2 Bearer token
+ // in addition to the single-use file URL. Never reuse the callback token as OAuth.
+ // Validate authorization before making the one irreversible provider request.
+ if(typeof accessToken!=='string'||accessToken.length<10||accessToken.length>20000||/\s|[\x00-\x1f\x7f]/.test(accessToken))
+  throw new GarminFileError('garmin_file_access_token_required');
  if(!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>50*1024*1024)throw new GarminFileError('garmin_file_invalid_limit');
  let response;
  try{
   response=await fetcher(u.toString(),{method:'GET',redirect:'manual',credentials:'omit',
-   signal:AbortSignal.any([AbortSignal.timeout(20000),...(signal?[signal]:[])]),headers:{Accept:'application/octet-stream'}});
+   signal:AbortSignal.any([AbortSignal.timeout(20000),...(signal?[signal]:[])]),
+   headers:{Accept:'application/octet-stream',Authorization:'Bearer '+accessToken}});
  }catch{throw new GarminFileError('garmin_file_download_outcome_uncertain');}
  if(response.status>=300&&response.status<400)throw new GarminFileError('garmin_file_redirect_rejected');
  if(response.status===410)throw new GarminFileError('garmin_file_unavailable');
- if(!response.ok)throw new GarminFileError('garmin_file_provider_rejected');
+ // Persist only a fixed HTTP status category. Never store the one-time URL,
+ // callback token, response headers or Garmin response body.
+ // No retry: an already consumed callback must be treated as indeterminate.
+ if(!response.ok){
+  const visible=[400,401,403,404,409,412,429,500,502,503,504].includes(response.status)?response.status:'other';
+  throw new GarminFileError('garmin_file_http_'+visible);
+ }
  const declared=response.headers.get('content-length');
  if(declared&&(!/^\d+$/.test(declared)||Number(declared)>maxBytes))throw new GarminFileError('garmin_file_too_large');
  if(!response.body)throw new GarminFileError('garmin_file_empty');
