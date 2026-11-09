@@ -17,8 +17,16 @@ async function serverAvailable() {
 async function reconnect() {
   if (checking || repairing || document.visibilityState === 'hidden') return;
   checking = true;
-  try { if (await serverAvailable() && !repairing) location.replace('/'); }
-  finally { checking = false; }
+  try {
+    const available = await serverAvailable();
+    if (!repairing && statusNode) {
+      // Never auto-navigate: an old service worker could serve this same offline
+      // page again, creating an endless redirect loop before users can repair it.
+      statusNode.textContent = available
+        ? 'El servidor responde. Pulsa «Volver a intentar». Si vuelve esta pantalla, usa «Comprobar y reparar acceso».'
+        : 'No hemos podido conectar con AsturPower. Volveremos a comprobar la conexión automáticamente.';
+    }
+  } finally { checking = false; }
 }
 async function repairAccess() {
   if (repairing) return;
