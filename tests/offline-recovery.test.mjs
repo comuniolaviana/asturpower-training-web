@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
 const source = await readFile(new URL('../app/public/offline-recovery.js', import.meta.url), 'utf8');
-function fixture(healthy) {
+function fixture(healthy, {visible=false}={}) {
   const status = {textContent:'Not connected'};
   const button = {disabled:false, addEventListener(_, fn){this.onClick=fn;}};
   const store = new Map([['saved-session','keep-this']]);
@@ -14,7 +14,7 @@ function fixture(healthy) {
     {scope:'https://app.example/another/',async unregister(){actions.unregistered.push('other');return true;}}
   ];
   const document = {
-    visibilityState:'hidden',
+    visibilityState:visible?'visible':'hidden',
     querySelector(selector){return selector==='#connection-status'?status:selector==='#repair-access'?button:null;},
     addEventListener(){}
   };
@@ -59,5 +59,15 @@ test('explicit repair only unregisters root worker and only deletes static versi
   assert.match(f.actions.navigated[0],/^\/\?recuperar=/);
   assert.deepEqual(f.actions.requested.map(([path,cache])=>[path,cache]),[['/health','no-store'],['/.netlify/functions/public-config','no-store']]);
   assert.equal(f.store.get('saved-session'),'keep-this');
+  assert.equal(f.button.disabled,false);
+});
+
+test('reachable server never causes an automatic offline-page redirect loop',async()=>{
+  const f=fixture(true,{visible:true});
+  await flush();
+  assert.deepEqual(f.actions.navigated,[]);
+  assert.deepEqual(f.actions.unregistered,[]);
+  assert.deepEqual(f.actions.deleted,[]);
+  assert.match(f.status.textContent,/servidor responde/i);
   assert.equal(f.button.disabled,false);
 });
