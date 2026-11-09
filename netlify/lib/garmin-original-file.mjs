@@ -15,13 +15,19 @@ export function validateOriginalCallback(value){
   return u;
  }catch{throw new GarminFileError('garmin_file_invalid_callback');}
 }
-export async function fetchGarminOriginalOnce(callback,{fetcher=fetch,signal,maxBytes=50*1024*1024}={}){
+export async function fetchGarminOriginalOnce(callback,{fetcher=fetch,signal,maxBytes=50*1024*1024,accessToken}={}){
  const u=validateOriginalCallback(callback);
+ // Garmin Developer Program Activity API uses the athlete's OAuth2 Bearer token
+ // in addition to the single-use file URL. Never reuse the callback token as OAuth.
+ // Validate authorization before making the one irreversible provider request.
+ if(typeof accessToken!=='string'||accessToken.length<10||accessToken.length>20000||/\s|[\x00-\x1f\x7f]/.test(accessToken))
+  throw new GarminFileError('garmin_file_access_token_required');
  if(!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>50*1024*1024)throw new GarminFileError('garmin_file_invalid_limit');
  let response;
  try{
   response=await fetcher(u.toString(),{method:'GET',redirect:'manual',credentials:'omit',
-   signal:AbortSignal.any([AbortSignal.timeout(20000),...(signal?[signal]:[])]),headers:{Accept:'application/octet-stream'}});
+   signal:AbortSignal.any([AbortSignal.timeout(20000),...(signal?[signal]:[])]),
+   headers:{Accept:'application/octet-stream',Authorization:'Bearer '+accessToken}});
  }catch{throw new GarminFileError('garmin_file_download_outcome_uncertain');}
  if(response.status>=300&&response.status<400)throw new GarminFileError('garmin_file_redirect_rejected');
  if(response.status===410)throw new GarminFileError('garmin_file_unavailable');
