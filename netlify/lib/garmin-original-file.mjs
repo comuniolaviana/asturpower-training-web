@@ -25,7 +25,13 @@ export async function fetchGarminOriginalOnce(callback,{fetcher=fetch,signal,max
  }catch{throw new GarminFileError('garmin_file_download_outcome_uncertain');}
  if(response.status>=300&&response.status<400)throw new GarminFileError('garmin_file_redirect_rejected');
  if(response.status===410)throw new GarminFileError('garmin_file_unavailable');
- if(!response.ok)throw new GarminFileError('garmin_file_provider_rejected');
+ // Persist only a fixed HTTP status category. Never store the one-time URL,
+ // callback token, response headers or Garmin response body.
+ // No retry: an already consumed callback must be treated as indeterminate.
+ if(!response.ok){
+  const visible=[400,401,403,404,409,412,429,500,502,503,504].includes(response.status)?response.status:'other';
+  throw new GarminFileError('garmin_file_http_'+visible);
+ }
  const declared=response.headers.get('content-length');
  if(declared&&(!/^\d+$/.test(declared)||Number(declared)>maxBytes))throw new GarminFileError('garmin_file_too_large');
  if(!response.body)throw new GarminFileError('garmin_file_empty');
