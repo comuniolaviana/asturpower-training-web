@@ -15,6 +15,9 @@ test('single-use callback transport follows no redirect and forwards no OAuth to
  calls=0;await assert.rejects(fetchGarminOriginalOnce(url,{fetcher:async()=>{calls++;throw new Error('opaque callback token must not escape');}}),/outcome_uncertain/);assert.equal(calls,1);
 });
 test('redirect, one-shot expiry and oversized file have fixed errors and are never retried',async()=>{
- for(const [status,code] of [[302,'redirect_rejected'],[410,'unavailable'],[503,'provider_rejected']])await assert.rejects(fetchGarminOriginalOnce(url,{fetcher:async()=>new Response(null,{status})}),new RegExp(code));
+ for(const [status,code] of [[302,'redirect_rejected'],[410,'unavailable'],[400,'http_400'],[401,'http_401'],[403,'http_403'],[404,'http_404'],[412,'http_412'],[429,'http_429'],[503,'http_503']]){
+  await assert.rejects(fetchGarminOriginalOnce(url,{fetcher:async()=>new Response(null,{status,headers:{'X-Secret':'never-log'}})}),
+   e=>e.code==='garmin_file_'+code&&!JSON.stringify(e).includes('synthetic-test-only')&&!JSON.stringify(e).includes('never-log'));
+ }
  await assert.rejects(fetchGarminOriginalOnce(url,{maxBytes:2,fetcher:async()=>new Response(new Uint8Array([1,2,3]))}),/too_large/);
 });
