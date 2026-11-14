@@ -1,3 +1,0 @@
-# Hosting retired in favor of Cloudflare. Reversible: retain all former code and credentials.
-[build]
-  ignore = "exit 0"
