@@ -19,6 +19,10 @@ export function coachSessionEssentials({activity={},metric=null,physiology=null,
  const npSource=metric?.normalized_power_watts!==null&&metric?.normalized_power_watts!==undefined
   ?metric?.np_method==='device'?'Registrado por Garmin':metric?.np_method==='records_1s'?'Calculado desde muestras FIT':'Fuente NP no determinada'
   :'Registrado en la sesión Garmin';
+ const meanPower=num(activity?.avg_power_watts,1)??num(session.avgPower,1);
+ const variation=np!==null&&meanPower!==null?Number((np/meanPower).toFixed(3)):null;
+ const weight=num(physiology?.weight_kg,20);
+ const wattsPerKg=meanPower!==null&&weight!==null?Number((meanPower/weight).toFixed(2)):null;
  const entries=[
   item('ftp','FTP confirmado',ftp,'W',physiology?.effective_date?'Vigente desde '+physiology.effective_date:'FTP indicado en la ficha'),
   item('ftpGarmin','FTP de Garmin',deviceFtp,'W','Dato de esta sesión, no sustituye al FTP confirmado'),
@@ -28,7 +32,10 @@ export function coachSessionEssentials({activity={},metric=null,physiology=null,
   item('kj','Trabajo mecánico',num(session.totalWork)===null?null:num(session.totalWork)/1000,'kJ','Trabajo registrado en el archivo FIT'),
   item('cadence','Cadencia media',num(session.avgCadence),'rpm','Registrada en la sesión Garmin'),
   item('heartRate','Frecuencia cardíaca media',num(activity?.avg_heart_rate,1)??num(session.avgHeartRate,1),'lpm','Resumen de la actividad'),
-  item('avgPower','Potencia media',num(activity?.avg_power_watts)??num(session.avgPower),'W','Resumen de la actividad')
+  item('avgPower','Potencia media',num(activity?.avg_power_watts)??num(session.avgPower),'W','Resumen de la actividad'),
+  item('vi','Índice de variabilidad (VI)',variation,'','NP / potencia media; refleja irregularidad del esfuerzo'),
+  item('wkg','Potencia media relativa',wattsPerKg,'W/kg',
+   'Potencia media / peso confirmado en la ficha histórica')
  ];
  const deviation=derivedTss!==null&&deviceTss!==null&&Math.abs(derivedTss-deviceTss)>Math.max(5,deviceTss*0.05)
   ?'El TSS calculado difiere del TSS registrado por Garmin. Revisa el FTP vigente, la duración y el origen del cálculo; no se ha cambiado ninguno.':null;
