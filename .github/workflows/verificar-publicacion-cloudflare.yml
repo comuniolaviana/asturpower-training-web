@@ -1,0 +1,22 @@
+name: Verificar capacidad de publicar Cloudflare sin revelar credenciales
+on:
+  push:
+    branches: [mejora-panel-entrenador-metricas-20261114]
+    paths: [.github/workflows/verificar-publicacion-cloudflare.yml]
+permissions:
+  contents: read
+jobs:
+  comprobar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comprobar si la publicación automatizada está autorizada
+        env:
+          TOKEN1: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TOKEN2: ${{ secrets.CLOUDFLARE_TOKEN }}
+          TOKEN3: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          if [[ -n "$TOKEN1" || -n "$TOKEN2" || -n "$TOKEN3" ]]; then
+            echo 'PUBLICACION_AUTOMATIZADA_DISPONIBLE'
+          else
+            echo 'PUBLICACION_AUTOMATIZADA_NO_CONFIGURADA'
+          fi
