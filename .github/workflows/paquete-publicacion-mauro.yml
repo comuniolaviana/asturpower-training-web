@@ -20,7 +20,7 @@ jobs:
           python3 - <<'PY'
           import base64,gzip,json,pathlib
           root=pathlib.Path('.')
-          files=sorted(p for p in root.rglob('*') if p.is_file() and p.parts[0]!='.github' and p.name not in ('paquete-publicacion-mauro.txt',))
+          files=sorted(p for p in root.rglob('*') if p.is_file() and p.parts[0] not in ('.github','.git') and p.name not in ('paquete-publicacion-mauro.txt',))
           assert len(files)==19, f'Número inesperado de recursos: {len(files)}'
           payload=[dict(path=p.as_posix(),size=p.stat().st_size,b64=base64.b64encode(p.read_bytes()).decode()) for p in files]
           zipped=base64.b64encode(gzip.compress(json.dumps(payload,separators=(',',':')).encode(),compresslevel=9)).decode()
