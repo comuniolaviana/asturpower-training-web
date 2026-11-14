@@ -11,6 +11,20 @@ async function bytesOf(stream,max){
  finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
  const bytes=new Uint8Array(size);let at=0;for(const part of parts){bytes.set(part,at);at+=part.length;}return bytes;
 }
+// El procedimiento SQL distingue presupuesto lleno, conflictos y permisos.
+// No mostrar mensajes SQL sin filtrar ni recomendar reintentos inútiles.
+export function sportsSeriesReservationMessage(error){
+ const code=String(error?.code??''),message=String(error?.message??'');
+ if(code==='54000'&&message.includes('series_storage_budget_exceeded'))
+  return 'El almacenamiento deportivo tiene agotado su presupuesto interno de 800 MiB. No repitas la importación: hay que ampliar la capacidad de forma controlada. Los originales y las series ya guardadas no se han borrado.';
+ if(message.includes('series_manifest_conflict'))
+  return 'La actividad ya tiene una serie deportiva distinta. No se ha sobrescrito; solicita revisión antes de reemplazarla.';
+ if(message.includes('owned_fit_required'))
+  return 'Esta actividad aún no dispone de un FIT vinculado y autorizado. Completa primero la identificación del original.';
+ if(message.includes('invalid_series_manifest'))
+  return 'El archivo de series no cumple los límites de seguridad establecidos. Se ha conservado el original.';
+ return 'No se pudo reservar espacio para las series deportivas. Conserva el original y consulta el diagnóstico antes de reanudar.';
+}
 async function assertUser(client,id){const a=await client.auth.getUser();if(a.error||a.data?.user?.id!==id)throw new Error('La sesión ha cambiado.');}
 export async function saveSportSeries(client,ownerId,activityId,decoded){
  await assertUser(client,ownerId);
@@ -18,7 +32,8 @@ export async function saveSportSeries(client,ownerId,activityId,decoded){
  if(new TextEncoder().encode(json).length>MAX_JSON)throw new Error('La actividad supera el tamaño seguro de series.');
  const bytes=await bytesOf(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip')),MAX),sha=await seriesDigest(bytes);
  const reservation=await client.rpc('reserve_activity_series',{p_activity_id:activityId,p_sha:sha,p_bytes:bytes.length});
- if(reservation.error||typeof reservation.data!=='string')throw new Error('No se pudo reservar espacio para las series deportivas.');
+ if(reservation.error)throw new Error(sportsSeriesReservationMessage(reservation.error));
+ if(typeof reservation.data!=='string')throw new Error(sportsSeriesReservationMessage(null));
  const storage=client.storage.from(BUCKET),sent=await storage.upload(reservation.data,new Blob([bytes]),{contentType:'application/octet-stream',upsert:false});
  if(sent.error){
   if(![sent.error.statusCode,sent.error.code,sent.error.error].some(v=>['409','23505','Duplicate','ResourceAlreadyExists'].includes(String(v))))throw new Error('No se pudo guardar la serie deportiva. Puedes reanudar.');
