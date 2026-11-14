@@ -1,0 +1,44 @@
+name: Verificar panel entrenador publicado en Cloudflare (solo lectura)
+on:
+  push:
+    branches: [publicacion-assets-mauro-20261114]
+    paths:
+      - .github/workflows/verificar-panel-mauro.yml
+permissions:
+  contents: read
+jobs:
+  comprobar-version-publica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar HTML y assets públicos, sin login, claves ni cambios
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,pathlib,urllib.request
+          base='https://asturpower-garmin-dev.asturpower-training.workers.dev'
+          def fetch(path):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'AsturPower-public-readonly-verifier/1.0','Cache-Control':'no-cache'})
+              with urllib.request.urlopen(req,timeout=20) as response:
+                  data=response.read()
+                  print(path, 'HTTP',response.status, 'bytes',len(data), 'content-type',response.headers.get('Content-Type'))
+                  assert response.status==200
+                  return data
+          index=fetch('/')
+          expected_script='/assets/index-Dt8fYJJa.js'
+          expected_css='/assets/index-C_pwyC51.css'
+          assert expected_script.encode() in index, 'El HTML servido no incluye el paquete del nuevo panel.'
+          assert expected_css.encode() in index, 'El HTML servido no incluye la hoja de estilos del nuevo panel.'
+          for path in [expected_script,expected_css]:
+              live=fetch(path)
+              local=pathlib.Path(path.lstrip('/')).read_bytes()
+              assert hashlib.sha256(live).digest()==hashlib.sha256(local).digest(), 'El recurso publicado es distinto del compilado: '+path
+          js=fetch(expected_script).decode('utf-8')
+          assert 'Comparar manualmente con TrainingPeaks' in js, 'No aparece el comparador TrainingPeaks'
+          assert 'Filtrar por fiabilidad de datos' in js, 'No aparece el filtro de auditoría'
+          health=json.loads(fetch('/health'))
+          assert health.get('service')=='asturpower-garmin-app', 'Receptor de Garmin no reconocido'
+          assert health.get('configuration_format_ready') is True, 'Hay un problema con el formato de configuración'
+          print('VERIFICACIÓN SUPERADA: interfaz del entrenador exacta y configuración Garmin presente.')
+          PY
