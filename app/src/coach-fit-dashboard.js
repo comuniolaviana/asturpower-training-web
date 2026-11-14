@@ -1,11 +1,33 @@
 import {resolveHistoricalTss,ftpForDate,activityCalendarDate,loadSourceLabel} from './garmin-fit-analysis.js';
 import {loadSportSeries,renderSportSeries} from './garmin-sports-series.js';
 import {savePhysiology} from './performance-data.js';
+import {coachSessionEssentials} from './coach-session-essentials.js';
 const PAGE_SIZE=500;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:1});
 const fmtIf=value=>value===null||value===undefined?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:3});
 const date=value=>new Date(value).toLocaleDateString('es-ES');
+function paintCoachEssentials(root,report){
+ const doc=root.ownerDocument;root.replaceChildren();
+ const heading=doc.createElement('h5');heading.textContent='Datos esenciales para el entrenador';root.append(heading);
+ const grid=doc.createElement('dl');grid.className='coach-essentials-grid';
+ for(const item of report.entries){
+  const cell=doc.createElement('div'),term=doc.createElement('dt'),value=doc.createElement('dd'),origin=doc.createElement('small');
+  term.textContent=item.label;
+  value.textContent=item.value===null?'—':(item.key==='if'?fmtIf(item.value):fmt(item.value))+(item.unit?' '+item.unit:'');
+  origin.textContent=item.source;
+  cell.append(term,value,origin);grid.append(cell);
+ }
+ root.append(grid);
+ const {ftp,if:garminIf,tss:garminTss}=report.originalGarmin;
+ if(ftp!==null||garminIf!==null||garminTss!==null){
+  const reference=doc.createElement('p');reference.className='perf-note';
+  reference.textContent='Referencia original Garmin: FTP '+(ftp===null?'—':fmt(ftp)+' W')+' · IF '+fmtIf(garminIf)+' · TSS '+fmt(garminTss)+'. Los cálculos con FTP confirmado pueden diferir de los valores del dispositivo.';
+  root.append(reference);
+ }
+ if(report.deviation){const notice=doc.createElement('p');notice.className='perf-note';notice.setAttribute('role','status');notice.textContent=report.deviation;root.append(notice);}
+}
+
 export async function loadCoachFitDetails(client,coachId,athleteId,{includeSeries=true}={}){
  const auth=await client.auth.getUser();
  if(auth.error||auth.data?.user?.id!==coachId)throw new Error('La sesión del entrenador ha cambiado.');
@@ -129,13 +151,17 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
      open.addEventListener('click',async()=>{
       const inspection=++detailEpoch;detail.hidden=false;detail.replaceChildren();const h=doc.createElement('h4');h.textContent=a.title+' · '+date(a.started_at);detail.append(h);
       const description=doc.createElement('p');description.textContent=fmt(a.duration_seconds/60)+' min · '+fmt(a.distance_meters===null?null:a.distance_meters/1000)+' km · Desnivel '+fmt(a.elevation_gain_meters)+' m · Pulso '+fmt(a.avg_heart_rate)+' lpm · Potencia media '+fmt(a.avg_power_watts)+' W · NP '+fmt(m?.normalized_power_watts)+' W · IF '+fmtIf(m?.intensity_factor)+' · TSS '+fmt(m?.tss)+'.';detail.append(description);
+      const historical=ftpForDate(result.physiology,activityCalendarDate(a.started_at));
+      const essentials=doc.createElement('section');essentials.className='coach-session-essentials';detail.append(essentials);
+      const updateEssentials=series=>paintCoachEssentials(essentials,coachSessionEssentials({activity:a,metric:m,physiology:historical,series}));
+      updateEssentials(null);
       const body=doc.createElement('div');detail.append(body);
       if(!result.seriesEnabled){body.textContent='El deportista aún no ha autorizado compartir las curvas y registros.';return;}
       if(!result.seriesIds.includes(a.id)){body.textContent=m?'El FIT está vinculado, pero faltan las series compartibles. En la cuenta del deportista: Garmin → Completar series y revisar historial.':'Esta actividad aún no tiene un FIT asociado de forma verificable. El resumen permanece disponible; consulta el diagnóstico desde Garmin en la cuenta del deportista.';return;}
       body.textContent='Recuperando las series deportivas autorizadas…';
       try{const data=await loadSportSeries(client,coachId,athleteId,a.id);if(ticket!==epoch||inspection!==detailEpoch||!root.isConnected)return;
        if(!data){body.textContent='La serie ya no está disponible o el permiso ha cambiado.';return;}
-       const historical=ftpForDate(result.physiology,activityCalendarDate(a.started_at));renderSportSeries(body,data,{ftp:historical?.ftp,bounds:historical?.power_zone_bounds});
+       updateEssentials(data);renderSportSeries(body,data,{ftp:historical?.ftp,bounds:historical?.power_zone_bounds});
       }catch(error){if(ticket===epoch&&inspection===detailEpoch&&root.isConnected)body.textContent=error.message;}
      });
      const values=[date(a.started_at),a.title,fmt(a.duration_seconds/60)+' min',a.distance_meters===null?'—':fmt(a.distance_meters/1000)+' km',
