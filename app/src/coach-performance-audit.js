@@ -14,6 +14,8 @@ export function auditCoachActivity({activity={},metric=null,physiology=null,seri
  }else{
   if(cycling){
    if(!valid(metric.normalized_power_watts))issue('Falta potencia normalizada (NP) verificable.');
+   if(valid(metric.normalized_power_watts)&&valid(metric.duration_seconds,1)&&Number(metric.duration_seconds)<1200)
+    notes.push('Precaución: la NP en esfuerzos de menos de 20 minutos tiene limitaciones para representar la carga fisiológica; no usarla aisladamente para evaluar rendimiento.');
    if(!valid(metric.intensity_factor))issue('Falta factor de intensidad (IF).');
    if(!valid(metric.tss))issue('Falta carga TSS: no debe contabilizarse como descanso.');
    if(valid(metric.tss)&&!valid(physiology?.ftp,1)&&metric.tss_source!=='historical_ftp')
