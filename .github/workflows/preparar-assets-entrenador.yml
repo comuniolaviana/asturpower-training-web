@@ -1,0 +1,40 @@
+name: Preparar archivos públicos del panel para publicación segura
+on:
+  push:
+    branches: [mejora-panel-entrenador-metricas-20261114]
+    paths:
+      - .github/workflows/preparar-assets-entrenador.yml
+permissions:
+  contents: write
+jobs:
+  preparar-interfaz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Instalar dependencias exactas
+        run: npm ci
+      - name: Comprobar todos los tests
+        run: npm test
+      - name: Compilar activos públicos para Cloudflare, sin desplegar
+        run: npm run build:garmin:cloudflare:app
+      - name: Publicar paquete estático en rama temporal (no Cloudflare)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          TARGET="${RUNNER_TEMP}/asturpower-assets"
+          git worktree add -b publicacion-assets-mauro-20261114 "$TARGET" HEAD
+          cd "$TARGET"
+          git rm -rq --ignore-unmatch .
+          cp -a "${GITHUB_WORKSPACE}/.wrangler/garmin-app-assets/." "$TARGET/"
+          git add -A
+          git commit -m "Assets públicos del entrenador ${GITHUB_SHA}"
+          git push origin HEAD:refs/heads/publicacion-assets-mauro-20261114
