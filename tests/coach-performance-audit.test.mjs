@@ -58,3 +58,8 @@ test('gimnasio sin TSS no se contabiliza como TSS cero ni se le aplica ciclismo'
  assert.equal(report.hasTss,false);
  assert.match(report.notes.join(' '),/modalidad/);
 });
+
+test('sesiones cortas con NP calculada llevan aviso de interpretación',()=>{
+ const audit=auditCoachActivity({activity,metric:{...metric,duration_seconds:600,tss:10.667,device_tss:null},physiology,seriesAvailable:true,seriesAllowed:true});
+ assert.match(audit.notes.join(' '),/menos de 20 minutos/);
+});
