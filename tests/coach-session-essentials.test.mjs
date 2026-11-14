@@ -45,3 +45,16 @@ test('si el FIT solo trae IF y TSS del dispositivo se muestran con su fuente sin
  assert.equal(get(summary,'cadence').value,0);
  assert.equal(get(summary,'ftp').value,null);
 });
+
+test('índice de variabilidad e intensidad relativa al peso: solo con potencia y peso fechados',()=>{
+ const report=coachSessionEssentials({activity:{avg_power_watts:200},metric:{normalized_power_watts:220},physiology:{weight_kg:70,effective_date:'2026-01-01'}});
+ assert.equal(get(report,'vi').value,1.1);
+ assert.equal(get(report,'wkg').value,2.86);
+ assert.match(get(report,'wkg').source,/histórica/);
+ const noWeight=coachSessionEssentials({activity:{avg_power_watts:200},metric:{normalized_power_watts:220}});
+ assert.equal(get(noWeight,'vi').value,1.1);
+ assert.equal(get(noWeight,'wkg').value,null);
+ const noMean=coachSessionEssentials({metric:{normalized_power_watts:220},physiology:{weight_kg:70}});
+ assert.equal(get(noMean,'vi').value,null);
+ assert.equal(get(noMean,'wkg').value,null);
+});
