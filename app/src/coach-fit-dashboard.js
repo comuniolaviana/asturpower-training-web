@@ -3,6 +3,7 @@ import {loadSportSeries,renderSportSeries} from './garmin-sports-series.js';
 import {savePhysiology} from './performance-data.js';
 import {coachSessionEssentials} from './coach-session-essentials.js';
 import {auditCoachActivity} from './coach-performance-audit.js';
+import {compareToTrainingPeaks} from './coach-tp-comparison.js';
 const PAGE_SIZE=500;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:1});
@@ -20,6 +21,50 @@ function paintActivityAudit(root,audit){
   section.append(list);
  }
  root.append(section);
+}
+function mountCoachTpComparison(root){
+ const doc=root.ownerDocument;
+ const form=doc.createElement('form');form.className='coach-tp-comparison';
+ const title=doc.createElement('h5');title.textContent='Comparar manualmente con TrainingPeaks';
+ const instructions=doc.createElement('p');instructions.textContent='Introduce los valores de la MISMA actividad que Mauro ve en TrainingPeaks. Solo se comparan aquí: no se guardan, ni se consulta ninguna cuenta externa. Las tolerancias son orientativas, no certifican igualdad.';
+ form.append(title,instructions);
+ const fields=doc.createElement('div');fields.className='perf-fields';
+ const inputs={};
+ for(const [key,label] of [['np','NP (W) en TrainingPeaks'],['if','IF en TrainingPeaks'],['tss','TSS en TrainingPeaks']]){
+  const field=doc.createElement('label');field.className='perf-field';
+  field.append(doc.createTextNode(label));const input=doc.createElement('input');
+  input.type='number';input.step='any';input.min='0';input.name=key;
+  input.placeholder='Sin introducir';inputs[key]=input;field.append(input);fields.append(field);
+ }
+ form.append(fields);
+ const submit=doc.createElement('button');submit.type='submit';submit.className='button secondary';submit.textContent='Comparar valores';
+ form.append(submit);
+ const output=doc.createElement('div');output.className='perf-scroll';form.append(output);root.append(form);
+ let current=null;
+ form.addEventListener('submit',event=>{
+  event.preventDefault();
+  output.replaceChildren();
+  const comparison=compareToTrainingPeaks(current,{np:inputs.np.value,if:inputs.if.value,tss:inputs.tss.value});
+  const table=doc.createElement('table'),head=doc.createElement('thead'),tr=doc.createElement('tr');
+  for(const label of ['Métrica','AsturPower','TrainingPeaks (manual)','Diferencia','Resultado']){
+   const th=doc.createElement('th');th.textContent=label;tr.append(th);
+  }
+  head.append(tr);table.append(head);const body=doc.createElement('tbody');
+  for(const item of comparison){
+   const row=doc.createElement('tr'),text=item.state==='aproximado'?'Dentro de tolerancia':item.state==='diferente'?'Revisar diferencia':item.state==='sin_dato'?'Falta dato en AsturPower':'Sin referencia introducida';
+   for(const value of [item.label,item.calculated,item.reference,item.delta,text]){
+    const td=doc.createElement('td');
+    td.textContent=typeof value==='number'?(item.key==='if'?value.toLocaleString('es-ES',{maximumFractionDigits:4}):value.toLocaleString('es-ES',{maximumFractionDigits:2}))+(item.unit?' '+item.unit:''):value===null?'—':value;
+    row.append(td);
+   }
+   body.append(row);
+  }
+  table.append(body);output.append(table);
+  const note=doc.createElement('p');note.className='perf-note';
+  note.textContent='Diferencias posibles: FTP configurado, duración activa, pausas, datos ausentes o método de NP. No se modifican los valores originales.';
+  output.append(note);
+ });
+ return report=>{current=report;output.replaceChildren();};
 }
 function paintCoachEssentials(root,report){
  const doc=root.ownerDocument;root.replaceChildren();
@@ -183,7 +228,12 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
       const historical=ftpForDate(result.physiology,activityCalendarDate(a.started_at));
       const essentials=doc.createElement('section');essentials.className='coach-session-essentials';detail.append(essentials);
       paintActivityAudit(detail,audit);
-      const updateEssentials=series=>paintCoachEssentials(essentials,coachSessionEssentials({activity:a,metric:m,physiology:historical,series}));
+      const compareRoot=doc.createElement('section');detail.append(compareRoot);
+      const updateComparison=mountCoachTpComparison(compareRoot);
+      const updateEssentials=series=>{
+       const report=coachSessionEssentials({activity:a,metric:m,physiology:historical,series});
+       paintCoachEssentials(essentials,report);updateComparison(report);
+      };
       updateEssentials(null);
       const body=doc.createElement('div');detail.append(body);
       if(!result.seriesEnabled){body.textContent='El deportista aún no ha autorizado compartir las curvas y registros.';return;}
