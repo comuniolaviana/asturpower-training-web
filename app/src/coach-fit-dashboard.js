@@ -1,11 +1,92 @@
 import {resolveHistoricalTss,ftpForDate,activityCalendarDate,loadSourceLabel} from './garmin-fit-analysis.js';
 import {loadSportSeries,renderSportSeries} from './garmin-sports-series.js';
 import {savePhysiology} from './performance-data.js';
+import {coachSessionEssentials} from './coach-session-essentials.js';
+import {auditCoachActivity} from './coach-performance-audit.js';
+import {compareToTrainingPeaks} from './coach-tp-comparison.js';
 const PAGE_SIZE=500;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:1});
 const fmtIf=value=>value===null||value===undefined?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:3});
 const date=value=>new Date(value).toLocaleDateString('es-ES');
+function paintActivityAudit(root,audit){
+ const doc=root.ownerDocument,section=doc.createElement('div');section.className='coach-activity-audit';
+ const h=doc.createElement('h5');h.textContent='Auditoría del motor · '+audit.label;section.append(h);
+ const caption=doc.createElement('p');caption.textContent='Comprueba datos y fórmulas dentro de AsturPower. No certifica coincidencia con TrainingPeaks sin comparar la misma actividad con sus valores de referencia.';section.append(caption);
+ for(const [kind,messages] of [['Pendiente de revisar',audit.issues],['Observaciones',audit.notes]]){
+  if(!messages.length)continue;
+  const title=doc.createElement('strong');title.textContent=kind+':';section.append(title);
+  const list=doc.createElement('ul');
+  for(const message of messages){const li=doc.createElement('li');li.textContent=message;list.append(li);}
+  section.append(list);
+ }
+ root.append(section);
+}
+function mountCoachTpComparison(root){
+ const doc=root.ownerDocument;
+ const form=doc.createElement('form');form.className='coach-tp-comparison';
+ const title=doc.createElement('h5');title.textContent='Comparar manualmente con TrainingPeaks';
+ const instructions=doc.createElement('p');instructions.textContent='Introduce los valores de la MISMA actividad que Mauro ve en TrainingPeaks. Solo se comparan aquí: no se guardan, ni se consulta ninguna cuenta externa. Las tolerancias son orientativas, no certifican igualdad.';
+ form.append(title,instructions);
+ const fields=doc.createElement('div');fields.className='perf-fields';
+ const inputs={};
+ for(const [key,label] of [['np','NP (W) en TrainingPeaks'],['if','IF en TrainingPeaks'],['tss','TSS en TrainingPeaks']]){
+  const field=doc.createElement('label');field.className='perf-field';
+  field.append(doc.createTextNode(label));const input=doc.createElement('input');
+  input.type='number';input.step='any';input.min='0';input.name=key;
+  input.placeholder='Sin introducir';inputs[key]=input;field.append(input);fields.append(field);
+ }
+ form.append(fields);
+ const submit=doc.createElement('button');submit.type='submit';submit.className='button secondary';submit.textContent='Comparar valores';
+ form.append(submit);
+ const output=doc.createElement('div');output.className='perf-scroll';form.append(output);root.append(form);
+ let current=null;
+ form.addEventListener('submit',event=>{
+  event.preventDefault();
+  output.replaceChildren();
+  const comparison=compareToTrainingPeaks(current,{np:inputs.np.value,if:inputs.if.value,tss:inputs.tss.value});
+  const table=doc.createElement('table'),head=doc.createElement('thead'),tr=doc.createElement('tr');
+  for(const label of ['Métrica','AsturPower','TrainingPeaks (manual)','Diferencia','Resultado']){
+   const th=doc.createElement('th');th.textContent=label;tr.append(th);
+  }
+  head.append(tr);table.append(head);const body=doc.createElement('tbody');
+  for(const item of comparison){
+   const row=doc.createElement('tr'),text=item.state==='aproximado'?'Dentro de tolerancia':item.state==='diferente'?'Revisar diferencia':item.state==='sin_dato'?'Falta dato en AsturPower':'Sin referencia introducida';
+   for(const value of [item.label,item.calculated,item.reference,item.delta,text]){
+    const td=doc.createElement('td');
+    td.textContent=typeof value==='number'?(item.key==='if'?value.toLocaleString('es-ES',{maximumFractionDigits:4}):value.toLocaleString('es-ES',{maximumFractionDigits:2}))+(item.unit?' '+item.unit:''):value===null?'—':value;
+    row.append(td);
+   }
+   body.append(row);
+  }
+  table.append(body);output.append(table);
+  const note=doc.createElement('p');note.className='perf-note';
+  note.textContent='Diferencias posibles: FTP configurado, duración activa, pausas, datos ausentes o método de NP. No se modifican los valores originales.';
+  output.append(note);
+ });
+ return report=>{current=report;output.replaceChildren();};
+}
+function paintCoachEssentials(root,report){
+ const doc=root.ownerDocument;root.replaceChildren();
+ const heading=doc.createElement('h5');heading.textContent='Datos esenciales para el entrenador';root.append(heading);
+ const grid=doc.createElement('dl');grid.className='coach-essentials-grid';
+ for(const item of report.entries){
+  const cell=doc.createElement('div'),term=doc.createElement('dt'),value=doc.createElement('dd'),origin=doc.createElement('small');
+  term.textContent=item.label;
+  value.textContent=item.value===null?'—':(item.key==='if'?fmtIf(item.value):fmt(item.value))+(item.unit?' '+item.unit:'');
+  origin.textContent=item.source;
+  cell.append(term,value,origin);grid.append(cell);
+ }
+ root.append(grid);
+ const {ftp,if:garminIf,tss:garminTss}=report.originalGarmin;
+ if(ftp!==null||garminIf!==null||garminTss!==null){
+  const reference=doc.createElement('p');reference.className='perf-note';
+  reference.textContent='Referencia original Garmin: FTP '+(ftp===null?'—':fmt(ftp)+' W')+' · IF '+fmtIf(garminIf)+' · TSS '+fmt(garminTss)+'. Los cálculos con FTP confirmado pueden diferir de los valores del dispositivo.';
+  root.append(reference);
+ }
+ if(report.deviation){const notice=doc.createElement('p');notice.className='perf-note';notice.setAttribute('role','status');notice.textContent=report.deviation;root.append(notice);}
+}
+
 export async function loadCoachFitDetails(client,coachId,athleteId,{includeSeries=true}={}){
  const auth=await client.auth.getUser();
  if(auth.error||auth.data?.user?.id!==coachId)throw new Error('La sesión del entrenador ha cambiado.');
@@ -79,10 +160,18 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
    if(ticket!==epoch||!root.isConnected)return;
    if(!result.allowed){status.textContent='El deportista todavía no ha autorizado compartir sus métricas FIT. Puede activarlo o revocarlo desde Garmin → Compartir análisis deportivos.';return;}
    const byId=new Map(result.metrics.map(x=>[x.activity_id,x]));
-   const merged=result.activities.map(a=>({activity:a,metric:byId.get(a.id)||null}));
+   const seriesSet=new Set(result.seriesIds);
+   const merged=result.activities.map(a=>{
+    const metric=byId.get(a.id)||null;
+    const physiology=ftpForDate(result.physiology,activityCalendarDate(a.started_at));
+    return {activity:a,metric,audit:auditCoachActivity({activity:a,metric,physiology,
+     seriesAvailable:seriesSet.has(a.id),seriesAllowed:result.seriesEnabled})};
+   });
    const withNp=result.metrics.filter(x=>x.normalized_power_watts!==null).length;
    const withTss=result.metrics.filter(x=>x.tss!==null).length;
-   status.textContent='Acceso deportivo autorizado: '+result.activities.length.toLocaleString('es-ES')+' actividades, '+result.metrics.length.toLocaleString('es-ES')+' FIT vinculados, '+withNp+' con NP y '+withTss+' con TSS.';
+   const pending=merged.filter(x=>x.audit.status!=='base_disponible').length;
+   const mismatches=merged.filter(x=>x.audit.status==='revisar').length;
+   status.textContent='Acceso deportivo autorizado: '+result.activities.length.toLocaleString('es-ES')+' actividades, '+result.metrics.length.toLocaleString('es-ES')+' FIT vinculados, '+withNp+' con NP y '+withTss+' con TSS. Auditoría: '+pending+' pendientes ('+mismatches+' con discrepancias).';
    if(!withTss)content.append(doc.createTextNode('Aún no hay TSS disponible. La preparación del historial recupera el IF/TSS de Garmin cuando exista. Para recalcularlo se necesita un FTP verificable con fecha de vigencia; el FTP de hoy no se aplica al pasado.'));
    content.append(doc.createTextNode('Series deportivas preparadas: '+result.seriesIds.length+'. '+(result.seriesEnabled?'Acceso a curvas autorizado.':'La compartición de curvas todavía no está autorizada.')));
    const editor=doc.createElement('details'),editorTitle=doc.createElement('summary');editorTitle.textContent='FTP y zonas históricos: registrar un cambio con su fecha';editor.append(editorTitle);
@@ -110,32 +199,49 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
    const years=[...new Set(merged.map(x=>x.activity.started_at.slice(0,4)))].sort().reverse();
    for(const y of years){const o=doc.createElement('option');o.value=y;o.textContent=y;year.append(o);}
    filter.append(text,year);content.append(filter);
+   const auditFilter=doc.createElement('label');auditFilter.className='perf-field';
+   const auditPrompt=doc.createElement('span');auditPrompt.textContent='Filtrar por fiabilidad de datos';
+   const auditSelect=doc.createElement('select');
+   for(const [key,label] of [['','Todas las actividades'],['incompleta','Datos pendientes'],['revisar','Revisar discrepancias'],['base_disponible','Base disponible']]){
+    const o=doc.createElement('option');o.value=key;o.textContent=label;auditSelect.append(o);
+   }
+   auditFilter.append(auditPrompt,auditSelect);content.append(auditFilter);
    const summary=doc.createElement('p'),tableHost=doc.createElement('div');tableHost.className='perf-scroll';
    const detail=doc.createElement('section');detail.className='perf-card';detail.hidden=true;
    content.append(summary,tableHost,detail);let detailEpoch=0;
    let page=0;
    function render(){
-    const listed=merged.filter(x=>!year.value||x.activity.started_at.startsWith(year.value));
+    const listed=merged.filter(x=>(!year.value||x.activity.started_at.startsWith(year.value))&&(!auditSelect.value||x.audit.status===auditSelect.value));
     chart(curve,listed,metricChoice.value);
     const pages=Math.max(1,Math.ceil(listed.length/40));page=Math.min(page,pages-1);
-    summary.textContent='Actividades del período: '+listed.length+' · '+fmt(listed.reduce((n,x)=>n+Number(x.activity.duration_seconds||0),0)/3600)+' h · '+fmt(listed.reduce((n,x)=>n+Number(x.activity.distance_meters||0),0)/1000)+' km · Página '+(page+1)+' de '+pages+'.';
+    summary.textContent='Actividades del filtro: '+listed.length+' · '+listed.filter(x=>x.audit.status==='base_disponible').length+' con base disponible · '+listed.filter(x=>x.audit.status==='revisar').length+' discrepancias · '+fmt(listed.reduce((n,x)=>n+Number(x.activity.duration_seconds||0),0)/3600)+' h · '+fmt(listed.reduce((n,x)=>n+Number(x.activity.distance_meters||0),0)/1000)+' km · Página '+(page+1)+' de '+pages+'.';
     tableHost.replaceChildren();
     const table=doc.createElement('table');
-    table.innerHTML='<thead><tr><th>Actividad</th><th>Fecha</th><th>Deporte y actividad</th><th>Tiempo</th><th>Distancia</th><th>FC media</th><th>Potencia media</th><th>NP</th><th>IF</th><th>TSS</th><th>Cobertura potencia</th><th>Muestras</th><th>Fuente NP</th><th>Fuente IF / TSS</th><th>Disponibilidad</th></tr></thead>';
+    table.innerHTML='<thead><tr><th>Actividad</th><th>Fecha</th><th>Deporte y actividad</th><th>Tiempo</th><th>Distancia</th><th>FC media</th><th>Potencia media</th><th>NP</th><th>IF</th><th>TSS</th><th>Cobertura potencia</th><th>Muestras</th><th>Fuente NP</th><th>Fuente IF / TSS</th><th>Auditoría</th><th>Disponibilidad</th></tr></thead>';
     const tbody=doc.createElement('tbody');
-    for(const {activity:a,metric:m} of listed.slice(page*40,(page+1)*40)){
+    for(const {activity:a,metric:m,audit} of listed.slice(page*40,(page+1)*40)){
      const tr=doc.createElement('tr');
      const openCell=doc.createElement('td'),open=doc.createElement('button');open.type='button';open.className='button secondary';open.textContent='Abrir';openCell.append(open);tr.append(openCell);
      open.addEventListener('click',async()=>{
       const inspection=++detailEpoch;detail.hidden=false;detail.replaceChildren();const h=doc.createElement('h4');h.textContent=a.title+' · '+date(a.started_at);detail.append(h);
       const description=doc.createElement('p');description.textContent=fmt(a.duration_seconds/60)+' min · '+fmt(a.distance_meters===null?null:a.distance_meters/1000)+' km · Desnivel '+fmt(a.elevation_gain_meters)+' m · Pulso '+fmt(a.avg_heart_rate)+' lpm · Potencia media '+fmt(a.avg_power_watts)+' W · NP '+fmt(m?.normalized_power_watts)+' W · IF '+fmtIf(m?.intensity_factor)+' · TSS '+fmt(m?.tss)+'.';detail.append(description);
+      const historical=ftpForDate(result.physiology,activityCalendarDate(a.started_at));
+      const essentials=doc.createElement('section');essentials.className='coach-session-essentials';detail.append(essentials);
+      paintActivityAudit(detail,audit);
+      const compareRoot=doc.createElement('section');detail.append(compareRoot);
+      const updateComparison=mountCoachTpComparison(compareRoot);
+      const updateEssentials=series=>{
+       const report=coachSessionEssentials({activity:a,metric:m,physiology:historical,series});
+       paintCoachEssentials(essentials,report);updateComparison(report);
+      };
+      updateEssentials(null);
       const body=doc.createElement('div');detail.append(body);
       if(!result.seriesEnabled){body.textContent='El deportista aún no ha autorizado compartir las curvas y registros.';return;}
       if(!result.seriesIds.includes(a.id)){body.textContent=m?'El FIT está vinculado, pero faltan las series compartibles. En la cuenta del deportista: Garmin → Completar series y revisar historial.':'Esta actividad aún no tiene un FIT asociado de forma verificable. El resumen permanece disponible; consulta el diagnóstico desde Garmin en la cuenta del deportista.';return;}
       body.textContent='Recuperando las series deportivas autorizadas…';
       try{const data=await loadSportSeries(client,coachId,athleteId,a.id);if(ticket!==epoch||inspection!==detailEpoch||!root.isConnected)return;
        if(!data){body.textContent='La serie ya no está disponible o el permiso ha cambiado.';return;}
-       const historical=ftpForDate(result.physiology,activityCalendarDate(a.started_at));renderSportSeries(body,data,{ftp:historical?.ftp,bounds:historical?.power_zone_bounds});
+       updateEssentials(data);renderSportSeries(body,data,{ftp:historical?.ftp,bounds:historical?.power_zone_bounds});
       }catch(error){if(ticket===epoch&&inspection===detailEpoch&&root.isConnected)body.textContent=error.message;}
      });
      const values=[date(a.started_at),a.title,fmt(a.duration_seconds/60)+' min',a.distance_meters===null?'—':fmt(a.distance_meters/1000)+' km',
@@ -144,6 +250,7 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
       m?fmt(Number(m.power_coverage)*100)+' %':'—',m?fmt(m.sample_count):'—',
       m?(m.np_method==='device'?'Registrada por Garmin':m.np_method==='records_1s'?'Calculada desde muestras':'Sin NP verificable'):'—',
       m?'IF: '+loadSourceLabel(m.if_source)+' · TSS: '+loadSourceLabel(m.tss_source):'—',
+      audit.label,
       result.seriesIds.includes(a.id)?'Curvas y vueltas disponibles':!m?'Sin FIT vinculado':Number(m.power_seconds)===0?'FIT leído sin muestras de potencia':m.normalized_power_watts===null?'Potencia insuficiente para NP':'Series pendientes'];
      for(const value of values){const td=doc.createElement('td');td.textContent=value;tr.append(td);}
      tbody.append(tr);
@@ -154,7 +261,8 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
     if(page+1<pages){const next=doc.createElement('button');next.type='button';next.className='button secondary';next.textContent='Siguiente';next.addEventListener('click',()=>{page++;render();});bar.append(next);}
     tableHost.append(bar);
    }
-   year.addEventListener('change',()=>{page=0;detailEpoch++;detail.hidden=true;render();});metricChoice.addEventListener('change',render);render();
+   const filterChanged=()=>{page=0;detailEpoch++;detail.hidden=true;render();};
+   year.addEventListener('change',filterChanged);auditSelect.addEventListener('change',filterChanged);metricChoice.addEventListener('change',render);render();
   }catch(error){if(ticket===epoch&&root.isConnected)status.textContent=error.message;}
  }
  select.addEventListener('change',refresh);if(athletes.length===1){select.value=athletes[0].user_id;void refresh();}return ()=>{epoch++;};

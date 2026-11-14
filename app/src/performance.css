@@ -33,3 +33,14 @@
 .garmin-minute-zoom [data-second-readout]{font-size:12px;line-height:1.7;overflow-wrap:anywhere;color:#2f4d42}
 .garmin-minute-zoom [data-second-status]{font-size:12px}
 @media(max-width:600px){.garmin-minute-zoom{padding:10px}.garmin-minute-zoom h6{font-size:14px}}
+
+
+/* Resumen de métricas verificado: visible en móvil y con temas heredados. */
+.coach-session-essentials{margin:18px 0;min-width:0}
+.coach-session-essentials h5{font-size:17px;margin:0 0 12px}
+.coach-essentials-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:0 0 12px}
+.coach-essentials-grid>div{border:1px solid #dce7db;border-radius:10px;padding:12px;min-width:0}
+.coach-essentials-grid dt{font-size:12px;font-weight:650;line-height:1.4}
+.coach-essentials-grid dd{font-size:21px;font-weight:750;margin:7px 0;line-height:1.2}
+.coach-essentials-grid small{display:block;font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+@media(max-width:600px){.coach-essentials-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.coach-essentials-grid dd{font-size:18px}}
