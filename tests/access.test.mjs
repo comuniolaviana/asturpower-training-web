@@ -188,7 +188,9 @@ test('same-account refresh and returning to the app preserve a running history i
   assert.ok(importer.isConnected, 'Returning from another app must preserve the importer');
   importer.dataset.garminImportRunning = 'false';
   t.client.state.emitAuth('TOKEN_REFRESHED'); await flush();
-  assert.equal(importer.isConnected, false, 'Dashboard refresh resumes after the import');
+  assert.equal(importer.isConnected, true, 'Token renewal must not reset completed or ongoing screens');
+  t.root.querySelector('[data-refresh]').click(); await flush();
+  assert.equal(importer.isConnected, false, 'Explicit Update still refreshes the dashboard');
   t.dispose();
 });
 
