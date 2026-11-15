@@ -3,7 +3,7 @@ on:
   push:
     branches: [desarrollo]
   pull_request:
-    branches: [desarrollo]
+    branches: [desarrollo, mejora-panel-entrenador-metricas-20261114]
   workflow_dispatch:
 permissions:
   contents: read
