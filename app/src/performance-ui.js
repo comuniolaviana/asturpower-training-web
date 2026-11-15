@@ -91,11 +91,11 @@ export async function mountPerformance({root,client,user,role,athletes=[]}) {
       $('[data-perf-chart]').hidden=false;$('[data-perf-scenario-message]').textContent='Escenario calculado. No se ha guardado en el calendario.';
     }catch(error){$('[data-perf-chart]').hidden=true;$('[data-perf-scenario-message]').textContent=error.message;}
   });
+  if(savedAthlete)$('[data-perf-athlete]').dispatchEvent(new win.Event('change'));
 }
 function renderChart(root,series){
   const width=800,height=300,pad=48,all=series.flatMap(r=>[r.ctl,r.atl,r.tsb]),min=Math.min(0,...all),max=Math.max(1,...all),range=max-min;
   const x=i=>pad+i*(width-2*pad)/(series.length-1),y=v=>height-pad-(v-min)*(height-2*pad)/range;
   const lines=['ctl','atl','tsb'].map(key=>`<polyline class="perf-${key}" fill="none" stroke-width="3" points="${series.map((r,i)=>`${x(i).toFixed(2)},${y(r[key]).toFixed(2)}`).join(' ')}"/>`).join('');
   root.innerHTML=`<svg class="perf-chart" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Proyección de CTL, ATL y TSB del escenario. Los valores exactos están en la tabla por día."><line x1="${pad}" y1="${y(0)}" x2="${width-pad}" y2="${y(0)}" stroke="currentColor" stroke-opacity=".25"/>${[min,(min+max)/2,max].map(v=>`<text x="4" y="${y(v)}" fill="currentColor" font-size="12">${num(v)}</text>`).join('')}${lines}<text x="${pad}" y="${height-12}" fill="currentColor" font-size="12">${series[0].date}</text><text x="${width-pad}" y="${height-12}" fill="currentColor" text-anchor="end" font-size="12">${series.at(-1).date}</text></svg>`;
-  if(savedAthlete)$('[data-perf-athlete]').dispatchEvent(new win.Event('change'));
 }
