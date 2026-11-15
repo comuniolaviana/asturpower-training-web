@@ -1,6 +1,7 @@
 import {buildPMC} from './pmc.js';
 import {loadPMCData} from './pmc-data.js';
 import {activityCalendarDate,loadSourceLabel} from './garmin-fit-analysis.js';
+import {readPreference,savePreference} from './view-preferences.js';
 
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=v=>Number(v).toLocaleString('es-ES',{maximumFractionDigits:1});
@@ -30,6 +31,8 @@ export function renderPMCChart(root,series,today,onSelect,showProjection=true){
 
 export function mountPMC({root,client,coachId,athletes=[],loader=loadPMCData,clock=()=>new Date()}){
  let data=null,epoch=0,result=null,moveCursor=()=>{};
+ const win=root.ownerDocument.defaultView;
+ const saved=readPreference(win,coachId,'pmc');
  const today=activityCalendarDate(clock());
  root.innerHTML=`<section class="perf-card pmc-panel"><div class="pmc-heading"><div><span class="eyebrow">EVOLUCIÓN Y PREVISIÓN</span><h3>Carga, fatiga y forma</h3><p>El estado actual y cómo puede evolucionar con la planificación.</p></div><span class="pmc-model-badge">Modelo CTL · ATL · TSB</span></div>
  <div class="pmc-controls"><label class="perf-field"><span>Deportista</span><select data-pmc-athlete><option value="">Selecciona un deportista</option>${athletes.map(a=>`<option value="${esc(a.user_id)}">${esc(a.display_name)}</option>`).join('')}</select></label><label class="perf-field"><span>Historial visible</span><select data-pmc-history><option value="30">30 días</option><option value="90" selected>90 días</option><option value="180">180 días</option><option value="365">365 días</option></select></label><label class="perf-field"><span>Días a futuro</span><input data-pmc-future type="number" min="1" max="90" step="1" value="21"></label><label class="perf-field"><span>Previsión</span><select data-pmc-mode><option value="calendar">Entrenamientos del calendario</option><option value="rest">Simular descanso completo</option></select></label></div>
@@ -38,9 +41,17 @@ export function mountPMC({root,client,coachId,athletes=[],loader=loadPMCData,clo
  <label class="perf-field pmc-date"><span>Consultar día · también puedes tocar la gráfica</span><input data-pmc-date type="date"></label><div data-pmc-day class="pmc-day" aria-live="polite"></div>
  <details><summary>Cómo se calcula y qué datos se utilizan</summary><p class="perf-note">CTL usa una constante de 42 días y ATL de 7. La forma TSB de cada fecha es el CTL menos el ATL del día anterior. El cálculo empieza en cero antes de la primera actividad recibida y usa todo el historial disponible, aunque solo muestres 30 o 90 días. Hoy incluye las actividades recibidas; la previsión empieza mañana. Los días futuros sin sesiones se simulan como descanso. Las actividades o sesiones sin TSS quedan indicadas como carga desconocida: las curvas usan únicamente las cargas disponibles y pueden infravalorar el total. Estos indicadores describen el modelo, no predicen un resultado deportivo.</p><p class="perf-note">Las sesiones futuras usan la carga que introduce el entrenador o una estimación por duración y potencia media objetivo de cada bloque. Los objetivos de pulso, RPE o texto libre requieren carga manual. El FTP actual no se aplica a años anteriores. La vista de descanso no modifica el calendario.</p></details></div></section>`;
  const $=s=>root.querySelector(s),status=$('[data-pmc-status]'),content=$('[data-pmc-content]');
+ const savedAthlete=athletes.some(a=>a.user_id===saved.athleteId)?saved.athleteId:'';
+ $('[data-pmc-athlete]').value=savedAthlete;
+ if(['30','90','180','365'].includes(String(saved.history||'')))$('[data-pmc-history]').value=String(saved.history);
+ if(Number.isInteger(Number(saved.future))&&Number(saved.future)>=1&&Number(saved.future)<=90)$('[data-pmc-future]').value=String(saved.future);
+ if(['calendar','rest'].includes(saved.mode))$('[data-pmc-mode]').value=saved.mode;
+ if(typeof saved.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(saved.date))$('[data-pmc-date]').value=saved.date;
+ const rememberControls=()=>savePreference(win,coachId,'pmc',{history:$('[data-pmc-history]').value,future:$('[data-pmc-future]').value,mode:$('[data-pmc-mode]').value});
  function selectDay(date){
   const row=result?.series.find(r=>r.date===date);if(!row)return;
   $('[data-pmc-date]').value=date;moveCursor(date);
+  savePreference(win,coachId,'pmc',{date});
   const source=item=>item.planned?item.source:loadSourceLabel(item.source);
   const display=result.audit.canDisplayModel&&(!row.projected||result.missingFuture===0);
   $('[data-pmc-day]').innerHTML=`<h4>${dateLabel(date)} · ${row.projected?'Previsión':'Historial recibido'}</h4><p>Carga diaria ${row.projected?'prevista':'registrada'}: <strong>${row.missing?`${fmt(row.load)} TSS conocidos · carga total desconocida`:`${fmt(row.load)} TSS`}</strong>${row.missing?` · ${row.missing} sesión(es) sin TSS`:''}</p><div class="pmc-stats">${statCards(row,display)}</div>${row.items.length?`<ul>${row.items.map(item=>`<li><strong>${esc(item.title)}</strong> · ${item.load===null?'Carga desconocida':fmt(item.load)+' TSS'}<small>${esc(source(item))}</small></li>`).join('')}</ul>`:`<p class="pmc-muted">${row.projected?'Sin sesiones previstas: descanso en este escenario.':'Sin actividades recibidas para este día.'}</p>`}`;
@@ -76,7 +87,9 @@ export function mountPMC({root,client,coachId,athletes=[],loader=loadPMCData,clo
   }catch(error){status.textContent=error.message;}
  }
  $('[data-pmc-athlete]').addEventListener('change',async event=>{
-  const ticket=++epoch,athleteId=event.target.value;data=null;result=null;content.hidden=true;$('[data-pmc-graph]').replaceChildren();$('[data-pmc-day]').replaceChildren();
+  const ticket=++epoch,athleteId=event.target.value;
+  savePreference(win,coachId,'pmc',{athleteId});
+  data=null;result=null;content.hidden=true;$('[data-pmc-graph]').replaceChildren();$('[data-pmc-day]').replaceChildren();
   if(!athleteId){status.textContent='Selecciona un deportista.';return;}
   status.textContent='Cargando historial y planificación…';
   try{
@@ -86,6 +99,8 @@ export function mountPMC({root,client,coachId,athletes=[],loader=loadPMCData,clo
    data=next;paint();
   }catch(error){if(ticket===epoch&&root.isConnected)status.textContent=error.message;}
  });
- for(const selector of ['[data-pmc-history]','[data-pmc-future]','[data-pmc-mode]'])$(selector).addEventListener(selector==='[data-pmc-future]'?'input':'change',paint);
+ for(const selector of ['[data-pmc-history]','[data-pmc-future]','[data-pmc-mode]'])$(selector).addEventListener(selector==='[data-pmc-future]'?'input':'change',()=>{const value=Number($('[data-pmc-future]').value);if(Number.isInteger(value)&&value>=1&&value<=90)rememberControls();paint();});
  $('[data-pmc-date]').addEventListener('change',event=>selectDay(event.target.value));
+ if(savedAthlete)$('[data-pmc-athlete]').dispatchEvent(new win.Event('change'));
+
 }

@@ -1,0 +1,44 @@
+name: Publicar reparacion de sesion AsturPower
+on:
+  push:
+    branches: ['fix/sesion-y-filtros-persistentes-20261115']
+    paths: ['.github/workflows/publicar-fix-sesion.yml']
+permissions:
+  contents: read
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: a953dc9eebff89e8e3f0a8ecf853977b
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verificar credenciales de publicacion sin mostrarlas
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo '::error::No se ha configurado el secreto CLOUDFLARE_API_TOKEN en GitHub. Publicacion cancelada sin modificar Cloudflare.'
+            exit 1
+          fi
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Repetir las pruebas antes de publicar
+        run: npm test
+      - name: Comprobar compilacion y Worker sin publicar
+        run: npm run test:garmin:cloudflare:app
+      - name: Publicar assets y Worker en el servicio actual
+        run: npx wrangler deploy --config wrangler.garmin.toml
+      - name: Verificar el servicio de salud tras publicar
+        run: |
+          node --input-type=module - <<'NODE'
+          const url='https://asturpower-garmin-dev.asturpower-training.workers.dev/health';
+          const response=await fetch(url,{headers:{'Cache-Control':'no-cache'}});
+          const data=await response.json();
+          if(!response.ok||data.service!=='asturpower-garmin-app'||!data.configuration_format_ready)throw new Error('Verificacion de salud no superada');
+          console.log('Salud de AsturPower y configuracion Garmin: OK');
+          NODE
