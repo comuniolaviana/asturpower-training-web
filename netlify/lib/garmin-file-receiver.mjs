@@ -1,7 +1,16 @@
 import {fetchGarminOriginalOnce,GarminFileError} from './garmin-original-file.mjs';
 import {digest,GarminError} from './garmin-protocol.mjs';
 import {sha256,originalIdentity,originalChunkPath,ORIGINAL_CHUNK_BYTES} from '../../app/src/garmin-original-vault.js';
-const checked=r=>{if(r.error)throw new GarminError('file_storage_unavailable');return r.data;};
+// Preserve quota diagnostics: a deliberate storage cap is not a Garmin/API outage.
+const checked=r=>{
+ if(r.error){
+  const details=String(r.error.message||'')+' '+String(r.error.details||'');
+  if(/api_file_storage_budget_exceeded|original_storage_budget_exceeded|series_storage_budget_exceeded/.test(details))
+   throw new GarminError('garmin_storage_budget_exceeded',507);
+  throw new GarminError('file_storage_unavailable');
+ }
+ return r.data;
+};
 export async function receiveGarminFile({db,event,connection,receivedAt,accessToken,fetcher=fetch}){
  // Reject a missing connection token before reserving the one-use Garmin callback.
  if(typeof accessToken!=='string'||accessToken.length<10||accessToken.length>20000||/\s|[\x00-\x1f\x7f]/.test(accessToken))
