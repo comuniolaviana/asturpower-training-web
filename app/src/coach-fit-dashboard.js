@@ -194,6 +194,7 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
     }catch(error){if(root.isConnected)message.textContent=error.message;}
     finally{button.disabled=false;}
    });
+   const activePrefs=readPreference(doc.defaultView,coachId,'coach-fit');
    const metricLabel=doc.createElement('label');metricLabel.className='perf-field';metricLabel.textContent='Gráfico de evolución por actividad';const metricChoice=doc.createElement('select');
    for(const [key,label] of [['duration_seconds','Duración (horas)'],['distance_meters','Distancia (km)'],['avg_heart_rate','Pulso medio (lpm)'],['avg_power_watts','Potencia media (W)'],['normalized_power_watts','Potencia normalizada (W)'],['intensity_factor','Factor de intensidad (IF)'],['tss','TSS disponible']]){const o=doc.createElement('option');o.value=key;o.textContent=label;metricChoice.append(o);}metricLabel.append(metricChoice);content.append(metricLabel);
    const curve=doc.createElement('div');content.append(curve);
@@ -202,8 +203,8 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
    const year=doc.createElement('select');const option=doc.createElement('option');option.value='';option.textContent='Todos los años';year.append(option);
    const years=[...new Set(merged.map(x=>x.activity.started_at.slice(0,4)))].sort().reverse();
    for(const y of years){const o=doc.createElement('option');o.value=y;o.textContent=y;year.append(o);}
-   if(years.includes(saved.year))year.value=saved.year;
-   if([...metricChoice.options].some(o=>o.value===saved.metric))metricChoice.value=saved.metric;
+   if(years.includes(activePrefs.year))year.value=activePrefs.year;
+   if([...metricChoice.options].some(o=>o.value===activePrefs.metric))metricChoice.value=activePrefs.metric;
    filter.append(text,year);content.append(filter);
    const auditFilter=doc.createElement('label');auditFilter.className='perf-field';
    const auditPrompt=doc.createElement('span');auditPrompt.textContent='Filtrar por fiabilidad de datos';
@@ -211,7 +212,7 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
    for(const [key,label] of [['','Todas las actividades'],['incompleta','Datos pendientes'],['revisar','Revisar discrepancias'],['base_disponible','Base disponible']]){
     const o=doc.createElement('option');o.value=key;o.textContent=label;auditSelect.append(o);
    }
-   if([...auditSelect.options].some(o=>o.value===saved.audit))auditSelect.value=saved.audit;
+   if([...auditSelect.options].some(o=>o.value===activePrefs.audit))auditSelect.value=activePrefs.audit;
    auditFilter.append(auditPrompt,auditSelect);content.append(auditFilter);
    const summary=doc.createElement('p'),tableHost=doc.createElement('div');tableHost.className='perf-scroll';
    const detail=doc.createElement('section');detail.className='perf-card';detail.hidden=true;
