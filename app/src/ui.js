@@ -8,6 +8,7 @@ import { mountAccountEmail } from './account-email.js';
 import { mountGarminPanel } from './garmin-connect.js';
 import { renderTeamManagement } from './team-ui.js';
 import { loadDashboard, saveProfile, messageFor, ROLE_LABELS, STATUS_LABELS } from './data.js';
+import {readPreference,savePreference,clearPreferences} from './view-preferences.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const glyphs = {
@@ -41,6 +42,20 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   let actionBusy = false, logoutBusy = false, ignoreSession = false, teamBusy = false, teamPage = 0, preferredRole = null, inviteCode = '';
   let emailNotice = '', emailNoticeUser = null, hubDispose=null, calendarDate=null;
   let accessFailed = false;
+  let restoredFor = null;
+  const win = root.ownerDocument.defaultView;
+  const validViews = new Set(['overview','profile','team','calendar','performance','garmin','weight','zones-hr','zones-power','news']);
+  function restoreWorkspace(userId) {
+    if (restoredFor === userId) return;
+    restoredFor = userId;
+    const prior = readPreference(win, userId, 'shell');
+    if (!oauthResult && params.get('view') !== 'news' && validViews.has(prior.view)) view = prior.view;
+    preferredRole = ['coach','athlete','admin'].includes(prior.preferredRole) ? prior.preferredRole : null;
+    query = typeof prior.query === 'string' ? prior.query.slice(0,100) : '';
+  }
+  function rememberWorkspace() {
+    if (user?.id) savePreference(win,user.id,'shell',{view,preferredRole,query});
+  }
   const accessTimers = new Set();
   const cleanupHub=()=>{hubDispose?.();hubDispose=null;};
   const navigateHub=(next,date)=>{calendarDate=date||null;view=next;render();};
@@ -91,6 +106,8 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
 
   function render() {
     if (!user || !data) return;
+    if (view==='performance' && data.role!=='coach' || ['weight','zones-hr','zones-power'].includes(view) && data.role!=='athlete' || !validViews.has(view)) view='overview';
+    rememberWorkspace();
     cleanupHub();
     void bindPush(root.ownerDocument.defaultView,user.id).catch(()=>{});
     const roleLabel = ROLE_LABELS[data.role] || 'Acceso pendiente';
@@ -137,6 +154,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
     }
     root.querySelector('#athlete-search')?.addEventListener('input', event => {
       query = event.target.value;
+      rememberWorkspace();
       root.querySelector('#athlete-list').innerHTML = athleteCards();
     });
   }
@@ -168,6 +186,7 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
       if (auth.error || !auth.data.user) { user = null; login(); return; }
       if (user?.id && user.id !== auth.data.user.id) inviteCode = '';
       user = auth.data.user;
+      restoreWorkspace(user.id);
       const next = await bounded(loadDashboard(client, user, preferredRole));
       if (ticket !== epoch || disposed) return;
       if (next.profile && next.role) {
@@ -238,7 +257,8 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
     if (target.hasAttribute('data-logout')) {
       if (logoutBusy) return;
       logoutBusy = true; ignoreSession = true;
-      ++epoch; user = null; data = null; view = 'overview'; query = ''; teamPage = 0; preferredRole = null; inviteCode = ''; login();
+      clearPreferences(win,user?.id);
+      ++epoch; user = null; data = null; restoredFor = null; view = 'overview'; query = ''; teamPage = 0; preferredRole = null; inviteCode = ''; login();
       root.querySelector('#login-form button').disabled = true;
       try {
         const { error } = await client.auth.signOut({ scope: 'local' });
@@ -312,12 +332,13 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   const { data: authListener } = client.auth.onAuthStateChange((event, session) => {
     if (disposed) return;
     if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
-      ++epoch; user = null; data = null; query = ''; view = 'overview'; preferredRole = null; login();
+      if (event === 'SIGNED_OUT') clearPreferences(win,user?.id);
+      ++epoch; user = null; data = null; restoredFor = null; query = ''; view = 'overview'; preferredRole = null; login();
     } else if (['SIGNED_IN', 'INITIAL_SESSION', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
       // A routine same-account refresh must not destroy the running importer.
       // Sign-out, account changes and explicit user updates still refresh immediately.
       if (!ignoreSession && user?.id && session?.user?.id === user.id &&
-          ['SIGNED_IN', 'TOKEN_REFRESHED'].includes(event) && (importingHistory()||['profile','weight','zones-hr','zones-power','news'].includes(view))) {
+          ['SIGNED_IN', 'TOKEN_REFRESHED'].includes(event)) {
         user = session.user;
         return;
       }
@@ -327,7 +348,9 @@ export function mountApp(root, client, { fixture = false, teamRequest = requestT
   });
   const onOnline = () => { if (accessFailed && !disposed && !ignoreSession) void sync(); };
   root.ownerDocument.defaultView.addEventListener('online', onOnline);
-  const onVisibility = () => { if (root.ownerDocument.visibilityState === 'visible' && (accessFailed || (user && !importingHistory() && !['profile','weight','zones-hr','zones-power','news'].includes(view)))) void sync(); };
+  // Returning from another tab must not unmount the active chart, calendar or filters.
+  // A genuine failed screen is still recoverable and the user can refresh manually.
+  const onVisibility = () => { if (root.ownerDocument.visibilityState === 'visible' && accessFailed && !ignoreSession) void sync(); };
   root.ownerDocument.addEventListener('visibilitychange', onVisibility);
   loading();
   // Makes startup independent of whether the SDK already emitted INITIAL_SESSION.
