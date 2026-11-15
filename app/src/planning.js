@@ -1,3 +1,4 @@
+import {readPreference,savePreference} from './view-preferences.js';
 
 /* Calendario MVP; la autorización definitiva la aplica Supabase RLS. */
 import { validateSteps, stepsTotalSeconds, describeStep } from './structured-steps.js';
@@ -106,10 +107,16 @@ export async function deletePlannedWorkout(client,coachId,workoutId){
 
 export async function mountPlanner({root,client,user,role,initialDate}) {
   if(!root||!client?.from||!user?.id||!['coach','athlete'].includes(role))return;
-  let month=/^\d{4}-\d{2}-\d{2}$/.test(initialDate||'')?new Date(initialDate+'T12:00:00'):new Date();
+  const win=root.ownerDocument.defaultView;
+  const stored=readPreference(win,user.id,'calendar-'+role);
+  const requestedDate=/^\d{4}-\d{2}-\d{2}$/.test(initialDate||'')?initialDate:null;
+  const storedMonth=/^\d{4}-(0[1-9]|1[0-2])$/.test(stored.month||'')?stored.month:null;
+  let month=requestedDate?new Date(requestedDate+'T12:00:00'):storedMonth?new Date(storedMonth+'-01T12:00:00'):new Date();
+  if(month.getFullYear()<1990||month.getFullYear()>new Date().getFullYear()+1)month=new Date();
   month=new Date(month.getFullYear(),month.getMonth(),1);
-  let day=initialDate||isoDate(new Date());
-  let workouts=[],activities=[],athletes=[],fitMetrics=new Map(),notice='',busy=false,editingId=null,deleteId=null,selectedAthlete='',detailDispose=()=>{},loadEpoch=0;
+  let day=requestedDate||(typeof stored.day==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(stored.day)&&stored.day.startsWith(isoDate(month).slice(0,7))?stored.day:storedMonth?isoDate(month):isoDate(new Date()));
+  let workouts=[],activities=[],athletes=[],fitMetrics=new Map(),notice='',busy=false,editingId=null,deleteId=null,selectedAthlete=role==='coach'&&typeof stored.athleteId==='string'?stored.athleteId:'',detailDispose=()=>{},loadEpoch=0;
+  const rememberCalendar=()=>savePreference(win,user.id,'calendar-'+role,{month:isoDate(month).slice(0,7),day,athleteId:role==='coach'?selectedAthlete:''});
   const localDay=timestamp=>isoDate(new Date(timestamp));
   const range=()=>[isoDate(month),isoDate(new Date(month.getFullYear(),month.getMonth()+1,1))];
 
@@ -167,6 +174,7 @@ export async function mountPlanner({root,client,user,role,initialDate}) {
       }
       if(ticket!==loadEpoch||!root.isConnected)return;
       workouts=nextWorkouts;activities=nextActivities;fitMetrics=nextMetrics;athletes=nextAthletes;notice='';
+      if(role==='coach'&&selectedAthlete&&!athletes.some(a=>a.id===selectedAthlete))selectedAthlete='';
     } catch(error) {
       if(ticket!==loadEpoch||!root.isConnected)return;
       workouts=[];activities=[];fitMetrics=new Map();athletes=[];
@@ -176,6 +184,7 @@ export async function mountPlanner({root,client,user,role,initialDate}) {
   }
 
   function paint() {
+    rememberCalendar();
     detailDispose();detailDispose=()=>{};
     root.replaceChildren();
     const wrap=node('div','ap-planner');
