@@ -1,3 +1,25 @@
+const AUTH_STORAGE_KEY = 'asturpower-dev-auth';
+
+// A tab-only session is lost when the installed PWA/browser closes. Prefer
+// durable same-origin storage, while retaining a private-mode fallback.
+export function authStorage(win) {
+  try {
+    const local = win.localStorage;
+    const probe = 'asturpower-auth-storage-test';
+    local.setItem(probe, '1');
+    local.removeItem(probe);
+    try {
+      const previous = win.sessionStorage?.getItem(AUTH_STORAGE_KEY);
+      if (previous && !local.getItem(AUTH_STORAGE_KEY)) local.setItem(AUTH_STORAGE_KEY, previous);
+      // Avoid reviving a signed-out account from a stale tab-only copy.
+      win.sessionStorage?.removeItem(AUTH_STORAGE_KEY);
+    } catch { /* Legacy storage may be unavailable on some devices. */ }
+    return local;
+  } catch {
+    try { return win.sessionStorage; } catch { return undefined; }
+  }
+}
+
 // Recovery ends as soon as the app starts: do not remount private sessions or uploads.
 export function bootstrapApp({root,createClient,mountApp,win=window,fetcher=fetch}){
  let running=false,started=false,failed=false,attempts=0,timer=null;
@@ -14,7 +36,7 @@ export function bootstrapApp({root,createClient,mountApp,win=window,fetcher=fetc
    const response=await fetcher('/.netlify/functions/public-config',{cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(12000)});
    if(!response.ok)throw Error('access_unavailable');const config=await response.json();
    if(!config.supabaseUrl||!config.publishableKey?.startsWith('sb_publishable_'))throw Error('configuration_unavailable');
-   const client=createClient(config.supabaseUrl,config.publishableKey,{auth:{storage:win.sessionStorage,storageKey:'asturpower-dev-auth',persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,flowType:'pkce'}});
+   const client=createClient(config.supabaseUrl,config.publishableKey,{auth:{storage:authStorage(win),storageKey:AUTH_STORAGE_KEY,persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,flowType:'pkce'}});
    mountApp(root,client);started=true;failed=false;stop();
   }catch{
    failed=true;showRetry();if(++attempts<=6)timer=win.setTimeout(retryWhenVisible,10000);
