@@ -49,3 +49,24 @@ El cliente antiguo convertía todos los errores de reserva en `No se pudo reserv
 Documentación oficial Supabase: [Manage Storage size usage](https://supabase.com/docs/guides/platform/manage-your-usage/storage-size) (a 14-11-2026, cuota Free publicada de 1 GB, plan Pro con cuota mayor; verificar siempre al contratar).
 
 **Estado:** diagnóstico de solo lectura efectuado y mejoras del motor en rama de revisión; ampliación pendiente del titular. No realizado ningún cambio de capacidad ni facturación.
+
+
+## Actualización de diagnóstico (15-11-2026)
+
+Nueva comprobación de solo lectura, sin modificar datos ni permisos:
+- Misma suma global: 452.164.113 bytes originales + 386.613.370 bytes series = **838.777.483 bytes** (99,99 % del límite interno).
+- Cinco notificaciones de `activityFiles` con `status=failed`, `attempts=5` y `last_error=file_storage_unavailable`, recibidas el 14 y el 15 de noviembre.
+- La última fila de `garmin_api_files` es del 12-11-2026. Los eventos recientes sí crearon resúmenes deportivos, pero no nuevos archivos FIT ni series.
+- La función SQL `start_garmin_api_file` rechaza un callback si la ocupación actual + la reserva conservadora de 54 MiB excede el límite interno de 800 MiB. El receptor anterior transformaba el mensaje específico en el genérico `file_storage_unavailable`.
+
+**Corrección preparada en una rama, NO desplegada en Supabase:**
+- `20261115175000_garmin_storage_guarded_900mib.sql` ajusta las tres reservas del mismo sistema (archivos automáticos, originales del deportista y series) de 800 a **900 MiB**. Es una solución **provisional**: solo permite cierto margen extra si el plan Free y los consumos reales siguen siendo compatibles; no transforma una cuota de 1 GB en 10 GB.
+- Conserva una reserva externa de aproximadamente 124 MiB frente a los 1.024 MiB de almacenamiento nominal; los límites de subida por archivo, los permisos y los originales no se modifican.
+- El propio SQL comprueba los bytes almacenados, las reservas en vuelo y las definiciones exactas de las tres funciones. Aborta sin modificar ninguna si encuentra una estructura distinta o una ocupación superior.
+- El receptor distingue `garmin_storage_budget_exceeded` de un fallo indeterminado y no descarga el callback único de Garmin si falla primero la reserva.
+
+**Condiciones obligatorias para aplicarla:** confirmar nuevamente el plan, la cuota y el uso real de Supabase; comprobar que no hay otro consumo fuera de las cuentas internas, hacer copia y ejecutar las pruebas SQL. No activar ni facturar un plan desde código.
+
+**Recuperación de los cinco eventos fallidos:** la bandeja conserva cifrados los eventos fallidos, pero los enlaces de archivos Garmin son de un solo uso y caducan. Tras ganar capacidad debe investigarse uno a uno cuáles siguen vigentes **antes de reactivarlos**, sin asumir que se recuperarán todos ni hacer descargas duplicadas. Si el enlace caducó, necesitará una nueva entrega autorizada de Garmin o un FIT exportado por el deportista.
+
+**Solución permanente:** ampliar almacenamiento real a un volumen adecuado al número de deportistas (plan de pago confirmado) o migrar los archivos originales y series a almacenamiento privado compatible con R2, con autorización, políticas de acceso por deportista, integridad verificada y una migración reversible. No eliminar originales para liberar cuota.
