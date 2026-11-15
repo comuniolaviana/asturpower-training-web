@@ -1,6 +1,7 @@
 import {parseTrainingPeaksSummary,compareTrainingPeaks} from './trainingpeaks-audit.js';
 import {loadCoachFitDetails} from './coach-fit-dashboard.js';
 import {loadSourceLabel} from './garmin-fit-analysis.js';
+import {readPreference,savePreference} from './view-preferences.js';
 
 const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const fmt=n=>n===null||n===undefined?'—':Number(n).toLocaleString('es-ES',{maximumFractionDigits:2});
@@ -8,6 +9,8 @@ const labels={missing:'Falta TSS Garmin',different:'Diferencia relevante',compar
 
 export function mountTrainingPeaksAudit({root,client,coachId,athletes=[],loader=loadCoachFitDetails}){
  let epoch=0,details=null;
+ const win=root.ownerDocument.defaultView;
+ const saved=readPreference(win,coachId,'trainingpeaks-audit');
  root.innerHTML='<section class="perf-card"><span class="eyebrow">CONTROL DE CALIDAD · SIN CAMBIAR DATOS</span>'+
   '<h3>Comparar con TrainingPeaks</h3>'+
   '<p>Comprueba qué cargas TSS faltan o difieren. El archivo CSV se lee <strong>únicamente en este navegador</strong>: no se envía ni se guarda en AsturPower y no altera los originales Garmin.</p>'+
@@ -21,7 +24,9 @@ export function mountTrainingPeaksAudit({root,client,coachId,athletes=[],loader=
  const $=s=>root.querySelector(s),athlete=$('[data-tp-athlete]'),file=$('[data-tp-file]'),status=$('[data-tp-status]'),view=$('[data-tp-result]');
  const clear=()=>{file.value='';file.disabled=true;view.replaceChildren();details=null;};
  athlete.addEventListener('change',async()=>{
-  const ticket=++epoch,athleteId=athlete.value;clear();
+  const ticket=++epoch,athleteId=athlete.value;
+  savePreference(win,coachId,'trainingpeaks-audit',{athleteId});
+  clear();
   if(!athleteId){status.textContent='Selecciona un deportista.';return;}
   status.textContent='Comprobando vinculación y autorización de métricas deportivas…';
   try{
@@ -75,5 +80,9 @@ export function mountTrainingPeaksAudit({root,client,coachId,athletes=[],loader=
    if(ticket===epoch&&root.isConnected)status.textContent='No se pudo comparar el CSV: '+String(error?.message||'Formato no reconocido').slice(0,180);
   }finally{if(ticket===epoch&&root.isConnected){file.value='';file.disabled=!details;}}
  });
+ if(athletes.some(a=>a.user_id===saved.athleteId)){
+  athlete.value=saved.athleteId;
+  athlete.dispatchEvent(new win.Event('change'));
+ }
  return ()=>{epoch++;clear();};
 }
