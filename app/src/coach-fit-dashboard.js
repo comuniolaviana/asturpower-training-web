@@ -4,6 +4,7 @@ import {savePhysiology} from './performance-data.js';
 import {coachSessionEssentials} from './coach-session-essentials.js';
 import {auditCoachActivity} from './coach-performance-audit.js';
 import {compareToTrainingPeaks} from './coach-tp-comparison.js';
+import {readPreference,savePreference} from './view-preferences.js';
 const PAGE_SIZE=500;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('es-ES',{maximumFractionDigits:1});
@@ -143,6 +144,7 @@ function chart(root,items,key='normalized_power_watts'){
 }
 export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
  const doc=root.ownerDocument;
+ const saved=readPreference(doc.defaultView,coachId,'coach-fit');
  root.innerHTML=`<section class="perf-card"><span class="eyebrow">DATOS REALES DE GARMIN</span><h3>Historial y métricas FIT por deportista</h3>
  <p>Historial, curvas de evolución, FTP y zonas por fecha. Abre una actividad para consultar sus curvas, vueltas y registros cuando la preparación de series esté completada y autorizada. El ZIP personal y las rutas GPS permanecen privados.</p>
  <label class="perf-field"><span>Elegir deportista</span><select data-detailed-athlete><option value="">Selecciona un deportista</option>
@@ -152,7 +154,9 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
  const select=root.querySelector('[data-detailed-athlete]'),status=root.querySelector('[data-detailed-status]'),content=root.querySelector('[data-detailed-content]');
  let epoch=0;
  async function refresh(){
-  const ticket=++epoch,athleteId=select.value;content.replaceChildren();
+  const ticket=++epoch,athleteId=select.value;
+  savePreference(doc.defaultView,coachId,'coach-fit',{athleteId});
+  content.replaceChildren();
   if(!athleteId){status.textContent='Selecciona un deportista.';return;}
   status.textContent='Comprobando permisos y cargando actividades FIT…';
   try{
@@ -198,6 +202,8 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
    const year=doc.createElement('select');const option=doc.createElement('option');option.value='';option.textContent='Todos los años';year.append(option);
    const years=[...new Set(merged.map(x=>x.activity.started_at.slice(0,4)))].sort().reverse();
    for(const y of years){const o=doc.createElement('option');o.value=y;o.textContent=y;year.append(o);}
+   if(years.includes(saved.year))year.value=saved.year;
+   if([...metricChoice.options].some(o=>o.value===saved.metric))metricChoice.value=saved.metric;
    filter.append(text,year);content.append(filter);
    const auditFilter=doc.createElement('label');auditFilter.className='perf-field';
    const auditPrompt=doc.createElement('span');auditPrompt.textContent='Filtrar por fiabilidad de datos';
@@ -205,6 +211,7 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
    for(const [key,label] of [['','Todas las actividades'],['incompleta','Datos pendientes'],['revisar','Revisar discrepancias'],['base_disponible','Base disponible']]){
     const o=doc.createElement('option');o.value=key;o.textContent=label;auditSelect.append(o);
    }
+   if([...auditSelect.options].some(o=>o.value===saved.audit))auditSelect.value=saved.audit;
    auditFilter.append(auditPrompt,auditSelect);content.append(auditFilter);
    const summary=doc.createElement('p'),tableHost=doc.createElement('div');tableHost.className='perf-scroll';
    const detail=doc.createElement('section');detail.className='perf-card';detail.hidden=true;
@@ -261,9 +268,13 @@ export function mountCoachFitDashboard({root,client,coachId,athletes=[]}){
     if(page+1<pages){const next=doc.createElement('button');next.type='button';next.className='button secondary';next.textContent='Siguiente';next.addEventListener('click',()=>{page++;render();});bar.append(next);}
     tableHost.append(bar);
    }
-   const filterChanged=()=>{page=0;detailEpoch++;detail.hidden=true;render();};
-   year.addEventListener('change',filterChanged);auditSelect.addEventListener('change',filterChanged);metricChoice.addEventListener('change',render);render();
+   const persistFilters=()=>savePreference(doc.defaultView,coachId,'coach-fit',{year:year.value,audit:auditSelect.value,metric:metricChoice.value});
+   const filterChanged=()=>{page=0;detailEpoch++;detail.hidden=true;persistFilters();render();};
+   year.addEventListener('change',filterChanged);auditSelect.addEventListener('change',filterChanged);metricChoice.addEventListener('change',()=>{persistFilters();render();});render();
   }catch(error){if(ticket===epoch&&root.isConnected)status.textContent=error.message;}
  }
- select.addEventListener('change',refresh);if(athletes.length===1){select.value=athletes[0].user_id;void refresh();}return ()=>{epoch++;};
+ select.addEventListener('change',refresh);
+ const previous=athletes.some(a=>a.user_id===saved.athleteId)?saved.athleteId:athletes.length===1?athletes[0].user_id:'';
+ if(previous){select.value=previous;void refresh();}
+ return ()=>{epoch++;};
 }
