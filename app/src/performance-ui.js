@@ -3,6 +3,7 @@ import {loadPhysiology,savePhysiology} from './performance-data.js';
 import {mountCoachFitDashboard} from './coach-fit-dashboard.js';
 import {mountPMC} from './pmc-ui.js';
 import {mountTrainingPeaksAudit} from './trainingpeaks-audit-ui.js';
+import {readPreference,savePreference} from './view-preferences.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=value=>value===null||value===undefined?'Sin dato':Number(value).toLocaleString('es',{maximumFractionDigits:2});
 const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');};
@@ -10,6 +11,8 @@ const field=(name,label,{type='number',min,max,step='any',required=false,value='
 const fields=[['ftp','FTP (W)',1,2500],['lthr','Pulso umbral (lpm)',30,250],['hr_max','Pulso máximo (lpm)',30,250],['hr_rest','Pulso en reposo (lpm)',20,150],['weight_kg','Peso (kg)',15,400],['threshold_pace_seconds','Ritmo umbral (segundos/km; natación: segundos/100 m)',30,3600]];
 export async function mountPerformance({root,client,user,role,athletes=[]}) {
   if(role!=='coach'){root.replaceChildren();return;}
+  const win=root.ownerDocument.defaultView;
+  const saved=readPreference(win,user.id,'performance');
   let rows=[],ticket=0,selected='',truncated=false;
   root.innerHTML=`<div class="perf-space">
   <div data-coach-pmc></div>
@@ -32,6 +35,9 @@ export async function mountPerformance({root,client,user,role,athletes=[]}) {
   mountTrainingPeaksAudit({root:root.querySelector('[data-trainingpeaks-audit]'),client,coachId:user.id,athletes});
   mountCoachFitDashboard({root:root.querySelector('[data-coach-fit-dashboard]'),client,coachId:user.id,athletes});
   const $=s=>root.querySelector(s),profile=$('[data-perf-profile]'),sport=$('[data-perf-sport]'),status=$('[data-perf-status]');
+  if(Object.hasOwn(SPORTS,saved.sport))sport.value=saved.sport;
+  const savedAthlete=athletes.some(a=>a.user_id===saved.athleteId)?saved.athleteId:'';
+  $('[data-perf-athlete]').value=savedAthlete;
   const alive=t=>root.isConnected&&ticket===t;
   const say=text=>{status.textContent=text;};
   function renderHistory(){
@@ -47,13 +53,15 @@ export async function mountPerformance({root,client,user,role,athletes=[]}) {
     renderHistory();$('[data-perf-calc-result]').replaceChildren();
   }
   $('[data-perf-athlete]').addEventListener('change',async event=>{
-    const t=++ticket;selected=event.target.value;rows=[];truncated=false;$('[data-perf-record]').hidden=true;$('[data-perf-calc-result]').replaceChildren();
+    const t=++ticket;selected=event.target.value;
+    savePreference(win,user.id,'performance',{athleteId:selected});
+    rows=[];truncated=false;$('[data-perf-record]').hidden=true;$('[data-perf-calc-result]').replaceChildren();
     if(!selected){say('Selecciona un deportista para consultar o guardar su ficha.');return;}
     say('Cargando ficha…');
     try{const result=await loadPhysiology(client,user.id,selected);if(!alive(t))return;rows=result.rows;truncated=result.truncated;fill();$('[data-perf-record]').hidden=false;say(truncated?'Se muestran las últimas 500 versiones.':'Ficha preparada. Los campos desconocidos pueden quedar vacíos.');}
     catch(error){if(alive(t))say(error.message);}
   });
-  sport.addEventListener('change',()=>{fill();});
+  sport.addEventListener('change',()=>{savePreference(win,user.id,'performance',{sport:sport.value});fill();});
   profile.addEventListener('submit',async event=>{
     event.preventDefault();const t=ticket,athleteId=selected,saveButton=profile.querySelector('button');if(saveButton.disabled||!athleteId)return;
     saveButton.disabled=true;say('Guardando nueva versión…');
@@ -89,4 +97,5 @@ function renderChart(root,series){
   const x=i=>pad+i*(width-2*pad)/(series.length-1),y=v=>height-pad-(v-min)*(height-2*pad)/range;
   const lines=['ctl','atl','tsb'].map(key=>`<polyline class="perf-${key}" fill="none" stroke-width="3" points="${series.map((r,i)=>`${x(i).toFixed(2)},${y(r[key]).toFixed(2)}`).join(' ')}"/>`).join('');
   root.innerHTML=`<svg class="perf-chart" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Proyección de CTL, ATL y TSB del escenario. Los valores exactos están en la tabla por día."><line x1="${pad}" y1="${y(0)}" x2="${width-pad}" y2="${y(0)}" stroke="currentColor" stroke-opacity=".25"/>${[min,(min+max)/2,max].map(v=>`<text x="4" y="${y(v)}" fill="currentColor" font-size="12">${num(v)}</text>`).join('')}${lines}<text x="${pad}" y="${height-12}" fill="currentColor" font-size="12">${series[0].date}</text><text x="${width-pad}" y="${height-12}" fill="currentColor" text-anchor="end" font-size="12">${series.at(-1).date}</text></svg>`;
+  if(savedAthlete)$('[data-perf-athlete]').dispatchEvent(new win.Event('change'));
 }
