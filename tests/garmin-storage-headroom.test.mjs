@@ -83,7 +83,7 @@ test('Garmin headroom: preflight prevents unsafe cap increases; exact three budg
     values($1,'provider-test','ciphertext','ciphertext',now()+interval '1 day',
       now()+interval '2 days',array['ACTIVITY_EXPORT'],'2026-11-01')`,[A]);
   const start=id=>db.query(`select public.start_garmin_api_file(
-    $1,'provider-test',$2,$3,'FIT','2026-11-15',jsonb_build_object('activityId',$2)) as result`,
+    $1::uuid,'provider-test',$2::text,$3::text,'FIT','2026-11-15',jsonb_build_object('activityId',$2::text)) as result`,
   [A,id,HASH]);
   assert.equal((await start('12345')).rows[0].result.download,true);
 
